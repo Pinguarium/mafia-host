@@ -3,7 +3,7 @@
    Never put a service_role / secret key in a public GitHub repository.
 */
 const AUTH_CONFIG = {
-  url: 'https://pinguarium.github.io/mafia-host/', // example: 'https://your-project.supabase.co'
+  url: 'https://fwghbqjxjebtrquerjml.supabase.co', // example: 'https://your-project.supabase.co'
   publishableKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ3Z2hicWp4amVidHJxdWVyam1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ2NDI2NDAsImV4cCI6MjExMDIxODY0MH0.8KQLq1gdr4m7TYV8gfHGTdFLWl-8rP1IH4qcZzEqgCQ', // Supabase publishable key (or legacy anon key), NOT service_role!
   allowSignup: false // Only enable during initial account creation, then disable at Supabase too
 };
