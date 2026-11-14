@@ -1,4 +1,4 @@
-/* MAFIA HOST v2 — editable deployment configuration
+/* MAFIA HOST v3 — editable deployment configuration
    To enable REAL host login: fill in the Supabase Project URL and PUBLISHABLE / anon key.
    Never put a service_role / secret key in a public GitHub repository.
 */
@@ -12,47 +12,41 @@ const AUTH_CONFIG = {
   'use strict';
   const E = window.MafiaEngine;
   const $ = id => document.getElementById(id);
-  const KEY = 'mafia-host-v2-state';
+  const KEY = 'mafia-host-v3-state';
   let storageKey = KEY + '-demo'; // Authenticated accounts are stored separately on each device.
   const MAX_UNDO = 40;
   let client=null, loggedIn=false, demoMode=false, selectedCount=8;
   let game=null, history=[], previousGame=null, timer={duration:300,remaining:300,until:null};
   let rolesVisible=true;
+  let scriptStep=0,scriptStepKey='';
   const counts = {};
 
-  const SCRIPTS = {
-    night: [
-      ['밤 시작','모두 눈을 감아 주세요. 이제 밤이 시작됩니다.','<ruby>皆<rt>みな</rt></ruby>さん、<ruby>目<rt>め</rt></ruby>を<ruby>閉<rt>と</rt></ruby>じてください。<ruby>夜<rt>よる</rt></ruby>が<ruby>始<rt>はじ</rt></ruby>まります。'],
-      ['마피아','마피아는 눈을 뜨고, 공격할 사람 한 명을 조용히 가리켜 주세요.','マフィアの<ruby>方<rt>かた</rt></ruby>は<ruby>目<rt>め</rt></ruby>を<ruby>開<rt>あ</rt></ruby>けて、<ruby>攻撃<rt>こうげき</rt></ruby>する<ruby>人<rt>ひと</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>指<rt>さ</rt></ruby>してください。','mafia'],
-      ['마담','마담은 눈을 뜨고 능력을 봉인할 사람, 또는 접선할 마피아를 가리켜 주세요.','マダムの<ruby>方<rt>かた</rt></ruby>は<ruby>目<rt>め</rt></ruby>を<ruby>開<rt>あ</rt></ruby>け、<ruby>能力<rt>のうりょく</rt></ruby>を<ruby>封印<rt>ふういん</rt></ruby>する<ruby>相手<rt>あいて</rt></ruby>を<ruby>指<rt>さ</rt></ruby>してください。','madam'],
-      ['청부업자','청부업자는 눈을 뜨세요. 접선이 끝났다면 직업을 추측할 대상을 선택해 주세요.','<ruby>殺<rt>ころ</rt></ruby>し<ruby>屋<rt>や</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>目<rt>め</rt></ruby>を<ruby>開<rt>あ</rt></ruby>けてください。<ruby>接触済<rt>せっしょくず</rt></ruby>みなら<ruby>役職<rt>やくしょく</rt></ruby>を<ruby>推理<rt>すいり</rt></ruby>する<ruby>相手<rt>あいて</rt></ruby>を<ruby>選<rt>えら</rt></ruby>んでください。','hitman'],
-      ['의사','의사는 눈을 뜨고, 치료할 사람을 한 명 골라 주세요.','<ruby>医者<rt>いしゃ</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>目<rt>め</rt></ruby>を<ruby>開<rt>あ</rt></ruby>けて、<ruby>治療<rt>ちりょう</rt></ruby>する<ruby>人<rt>ひと</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>選<rt>えら</rt></ruby>んでください。','doctor'],
-      ['간호사','간호사는 눈을 뜨고 의사를 찾아 주세요. 치료를 계승했다면 치료할 사람을 골라 주세요.','<ruby>看護師<rt>かんごし</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>目<rt>め</rt></ruby>を<ruby>開<rt>あ</rt></ruby>け、<ruby>医者<rt>いしゃ</rt></ruby>を<ruby>探<rt>さが</rt></ruby>してください。<ruby>治療<rt>ちりょう</rt></ruby>を<ruby>継承<rt>けいしょう</rt></ruby>した<ruby>場合<rt>ばあい</rt></ruby>は<ruby>対象<rt>たいしょう</rt></ruby>を<ruby>選<rt>えら</rt></ruby>んでください。','nurse'],
-      ['경찰','경찰은 눈을 뜨고, 조사할 사람 한 명을 선택해 주세요.','<ruby>警察<rt>けいさつ</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>目<rt>め</rt></ruby>を<ruby>開<rt>あ</rt></ruby>け、<ruby>調査<rt>ちょうさ</rt></ruby>する<ruby>人<rt>ひと</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>選<rt>えら</rt></ruby>んでください。','detective'],
-      ['기자','기자는 취재할 사람 한 명을 선택해 주세요. 취재자의 신원은 공개되지 않습니다.','<ruby>記者<rt>きしゃ</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>取材<rt>しゅざい</rt></ruby>する<ruby>人<rt>ひと</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>選<rt>えら</rt></ruby>んでください。<ruby>記者<rt>きしゃ</rt></ruby>の<ruby>正体<rt>しょうたい</rt></ruby>は<ruby>公開<rt>こうかい</rt></ruby>されません。','reporter',2],
-      ['건달','건달은 오늘 밤 협박할 사람을 선택해 주세요.','<ruby>不良<rt>ふりょう</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>今夜<rt>こんや</rt></ruby><ruby>脅<rt>おど</rt></ruby>す<ruby>相手<rt>あいて</rt></ruby>を<ruby>選<rt>えら</rt></ruby>んでください。','thug'],
-      ['테러리스트','테러리스트는 밤에 자폭 대상을 한 명 가리켜 주세요.','テロリストの<ruby>方<rt>かた</rt></ruby>は<ruby>夜<rt>よる</rt></ruby>の<ruby>自爆<rt>じばく</rt></ruby><ruby>対象<rt>たいしょう</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>指<rt>さ</rt></ruby>してください。','terrorist'],
-      ['성직자','성직자는 이미 사망한 사람 한 명을 부활시킬 수 있습니다.','<ruby>聖職者<rt>せいしょくしゃ</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は、<ruby>死亡<rt>しぼう</rt></ruby>した<ruby>人<rt>ひと</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>復活<rt>ふっかつ</rt></ruby>させられます。','priest'],
-      ['공무원','공무원은 직업을 조사할 사람 한 명을 선택해 주세요.','<ruby>公務員<rt>こうむいん</rt></ruby>の<ruby>方<rt>かた</rt></ruby>は<ruby>役職<rt>やくしょく</rt></ruby>を<ruby>調<rt>しら</rt></ruby>べる<ruby>相手<rt>あいて</rt></ruby>を<ruby>一人<rt>ひとり</rt></ruby><ruby>選<rt>えら</rt></ruby>んでください。','officer'],
-      ['밤 종료','모두 다시 눈을 감아 주세요. 잠시 후 아침이 됩니다.','もう<ruby>一度<rt>いちど</rt></ruby><ruby>目<rt>め</rt></ruby>を<ruby>閉<rt>と</rt></ruby>じてください。まもなく<ruby>朝<rt>あさ</rt></ruby>になります。']
-    ],
-    day: [
-      ['아침 발표','아침이 밝았습니다. 지난밤의 결과를 발표하겠습니다.','<ruby>朝<rt>あさ</rt></ruby>になりました。<ruby>昨夜<rt>さくや</rt></ruby>の<ruby>結果<rt>けっか</rt></ruby>を<ruby>発表<rt>はっぴょう</rt></ruby>します。'],
-      ['토론','이제 토론을 시작하겠습니다. 필요하면 토론 타이머를 사용하겠습니다.','これから<ruby>議論<rt>ぎろん</rt></ruby>を<ruby>始<rt>はじ</rt></ruby>めます。<ruby>必要<rt>ひつよう</rt></ruby>なら<ruby>時間<rt>じかん</rt></ruby>を<ruby>計<rt>はか</rt></ruby>ります。'],
-      ['투표','투표 후보를 정하겠습니다. 후보자는 최후의 변론을 해 주세요.','<ruby>投票<rt>とうひょう</rt></ruby>する<ruby>候補者<rt>こうほしゃ</rt></ruby>を<ruby>決<rt>き</rt></ruby>めます。<ruby>最後<rt>さいご</rt></ruby>の<ruby>弁明<rt>べんめい</rt></ruby>をしてください。'],
-      ['찬반 확인','찬성, 반대 순서로 투표하겠습니다. 결과를 확인해 주세요.','<ruby>賛成<rt>さんせい</rt></ruby>と<ruby>反対<rt>はんたい</rt></ruby>の<ruby>順<rt>じゅん</rt></ruby>で<ruby>投票<rt>とうひょう</rt></ruby>します。<ruby>結果<rt>けっか</rt></ruby>を<ruby>確認<rt>かくにん</rt></ruby>します。'],
-      ['낮 종료','낮이 끝났습니다. 모두 눈을 감아 주세요.','<ruby>昼<rt>ひる</rt></ruby>が<ruby>終<rt>お</rt></ruby>わりました。<ruby>皆<rt>みな</rt></ruby>さん、<ruby>目<rt>め</rt></ruby>を<ruby>閉<rt>と</rt></ruby>じてください。']
-    ],
-    ended: [['게임 종료','게임이 종료되었습니다. 승리한 팀을 발표합니다.','ゲームが<ruby>終了<rt>しゅうりょう</rt></ruby>しました。<ruby>勝利<rt>しょうり</rt></ruby>したチームを<ruby>発表<rt>はっぴょう</rt></ruby>します。']]
-  };
+  // Language text and the immutable night call sequence live in scripts.js.
+  const S = window.MafiaScripts;
+  if (!S) throw new Error('scripts.js를 먼저 불러와야 합니다.');
+  function upgradeGame(g) {
+    if (!g || !Array.isArray(g.players) || ![2,3].includes(g.version)) return null;
+    g.used ||= {};
+    g.used.priest = !!g.used.priest;
+    // When upgrading a game already in progress, preserve single-use reporter history.
+    g.used.reporter = !!g.used.reporter || (g.logs||[]).some(l=>/기자 취재:/.test(l.private||''));
+    g.used.medium = !!g.used.medium;
+    g.announcementEvents ||= [];
+    g.version=3;
+    return g;
+  }
 
   function readLocal() {
     game=null;history=[];previousGame=null;rolesVisible=true;resetTimerTo(5);
     try {
-      const data=JSON.parse(localStorage.getItem(storageKey)||'null');
-      if (data?.game?.version===2 && Array.isArray(data.game.players)) game=data.game;
-      if (Array.isArray(data?.history)) history=data.history.slice(-MAX_UNDO);
-      if (data?.previousGame?.version===2) previousGame=data.previousGame;
+      let raw=localStorage.getItem(storageKey);
+      // One-time migration from v2, without discarding the undo stack.
+      if (!raw) raw=localStorage.getItem(storageKey.replace('mafia-host-v3-state','mafia-host-v2-state'));
+      const data=JSON.parse(raw||'null');
+      game=upgradeGame(data?.game);
+      if (Array.isArray(data?.history)) history=data.history.slice(-MAX_UNDO).map(item=>({ ...item,game:upgradeGame(item.game) })).filter(x=>x.game);
+      previousGame=upgradeGame(data?.previousGame);
+      if (raw && !localStorage.getItem(storageKey)) localStorage.setItem(storageKey,JSON.stringify({game,history,previousGame,timer:data?.timer,rolesVisible:data?.rolesVisible}));
       if (data?.timer) timer=data.timer;
       if (typeof data?.rolesVisible==='boolean') rolesVisible=data.rolesVisible;
     } catch(err) { console.error('저장된 게임을 읽지 못함',err); }
@@ -140,7 +134,7 @@ const AUTH_CONFIG = {
       makeSelect('mafiaShooter','공격을 실행하는 마피아',shooters,'테러리스트 자폭 판정에서 공격자 판단에 사용',false);
       makeSelect('mafiaTarget','마피아의 공격 대상',alive,'마담/청부업자를 지목하면 공격하지 않고 접선. 마피아 팀 내 공격은 무효');
     }
-    if(roles('madam'))makeSelect('madamTarget','마담: 봉인 또는 마피아 접선 대상',alive,'총을 쏘는 마피아를 지목하면 접선; 다른 직업을 지목하면 그 밤 능력 봉인');
+    if(roles('madam'))makeSelect('madamTarget','마담: 봉인 또는 마피아 접선 대상',alive.filter(p=>p.id!==roles('madam').id),'마담 자신은 지목 불가. 일반 마피아를 지목하면 접선; 그 외 직업의 밤 능력 봉인');
     if(roles('hitman')){
       if(game.contact.hitman){
         makeSelect('hitmanTarget','청부업자: 처형할 대상',alive,'직업을 정확히 맞히면 즉시 사망 (치료 무시)');
@@ -160,19 +154,25 @@ const AUTH_CONFIG = {
     if(roles('detective'))makeSelect('detectiveTarget','경찰: 조사 대상',alive,'마피아 팀인지 여부만 확인');
     if(roles('officer'))makeSelect('officerTarget','공무원: 직업 조사 대상',alive,'마피아 팀원은 정보 없음, 시민 팀은 정확한 직업 표시');
     if(roles('reporter')){
-      if(game.round>=2) makeSelect('reporterTarget','기자: 공개 취재 대상',alive,'기자 본인의 이름은 아침 발표문에 출력되지 않음');
-      else {const p=document.createElement('p');p.className='muted';p.textContent='기자: 첫째 밤에는 취재할 수 없으며 둘째 밤부터 사용';dest.append(p);}
+      if(game.round>=2 && !game.used?.reporter) makeSelect('reporterTarget','기자: 공개 취재 대상 (게임당 1회)',alive,'익명 공개 · 둘째 밤부터 딱 한 번. 사용 후 입력칸만 사라지며 진행 대본은 계속 낭독');
+      else {const p=document.createElement('p');p.className='muted';p.textContent=game.used?.reporter?'기자: 1회 사용 완료 (진행 대본은 계속 부르세요)':'기자: 첫째 밤에는 능력 사용 불가 (진행 대본은 동일)';dest.append(p);}
     }
     if(roles('terrorist'))makeSelect('terroristTarget','테러리스트: 밤 자폭 대상',alive,'이 대상인 마피아가 테러리스트를 공격해서 처형하면 함께 사망');
     if(roles('thug'))makeSelect('thugTarget','건달: 다음 낮 투표권을 없앨 사람',alive,'투표 못 함 효과는 다음 낮 한 번만 적용');
-    if(roles('priest')&&!game.used.priest){
+    if(roles('priest')&&!game.used?.priest){
       const dead=game.players.filter(p=>!p.alive);
       makeSelect('priestTarget','성직자: 부활시킬 사망자',dead,'이전에 죽은 참가자만 선택 가능 · 게임당 1회');
+    }
+    if(roles('medium')){
+      if(game.round >= 2 && !game.used?.medium){
+        const dead=game.players.filter(p=>!p.alive);
+        makeSelect('mediumTarget','영매: 직업을 확인할 사망자 (게임당 1회)',dead,'둘째 밤부터 1회 · 조사 내용은 사회자 비공개 기록에만 표시');
+      } else {const p=document.createElement('p');p.className='muted';p.textContent=game.used?.medium?'영매: 1회 사용 완료 (진행 대본은 계속 부르세요)':'영매: 첫째 밤에는 능력 사용 불가 (진행 대본은 동일)';dest.append(p);}
     }
   }
   function readNight(){
     const choices={};
-    for(const id of ['mafiaShooter','mafiaTarget','madamTarget','hitmanTarget','hitmanGuess','doctorTarget','nurseProbe','nurseHeal','detectiveTarget','officerTarget','reporterTarget','terroristTarget','thugTarget','priestTarget']){
+    for(const id of ['mafiaShooter','mafiaTarget','madamTarget','hitmanTarget','hitmanGuess','doctorTarget','nurseProbe','nurseHeal','detectiveTarget','officerTarget','reporterTarget','terroristTarget','thugTarget','priestTarget','mediumTarget']){
       if($(id))choices[id]=$(id).value;
     }
     return choices;
@@ -256,7 +256,9 @@ const AUTH_CONFIG = {
       const hints=[p.alive?'생존':'사망'];
       if(rolesVisible){
         if(p.role==='soldier')hints.push(p.soldierShieldUsed?'방탄 소모':'방탄 보유');
-        if(p.role==='priest')hints.push(game.used.priest?'부활 소모':'부활 가능');
+        if(p.role==='priest')hints.push(game.used?.priest?'부활 소모':'부활 가능');
+        if(p.role==='reporter')hints.push(game.used?.reporter?'취재 소모':'취재 가능(둘째 밤부터)');
+        if(p.role==='medium')hints.push(game.used?.medium?'영매 능력 소모':'확인 가능(둘째 밤부터)');
         if(['madam','hitman'].includes(p.role))hints.push(game.contact[p.role]?'마피아 접선':'미접선');
         if(p.role==='nurse')hints.push(game.contact.nurse?'의사 접선':'미접선');
         if(game.blockedVoter===p.id&&game.phase==='day')hints.push('투표권 없음');
@@ -267,16 +269,62 @@ const AUTH_CONFIG = {
   }
   function renderScript(){
     const field=$('scriptList');field.replaceChildren();
-    const items=SCRIPTS[game.phase]||[];
-    for(const [label,ko,ja,role,minRound] of items){
-      if(role&&!E.active(game,role))continue;
-      if(minRound && game.round<minRound)continue;
-      const wrap=document.createElement('div');wrap.className='script-item';
-      const head=document.createElement('div');head.className='script-head';head.textContent=label;
-      const kr=document.createElement('div');kr.className='script-ko';kr.textContent=ko;
-      const jp=document.createElement('div');jp.className='script-ja';jp.lang='ja';jp.innerHTML=ja; // static trusted scripts, no player text
+    // NEVER branch on role membership, death, round, contact or used skills.
+    const items = game.phase==='night'?S.NIGHT:game.phase==='day'?S.DAY:S.ENDED;
+    const stepKey=`${game.phase}:${game.round}`;
+    if (stepKey!==scriptStepKey) {scriptStep=0;scriptStepKey=stepKey;}
+    scriptStep=Math.max(0,Math.min(scriptStep,items.length-1));
+    $('scriptProgress').textContent=`${scriptStep+1} / ${items.length} · ${items[scriptStep].label}`;
+    $('scriptPrev').disabled=scriptStep===0;
+    $('scriptNext').disabled=scriptStep===items.length-1;
+    for (const [i, item] of items.entries()) {
+      const wrap=document.createElement('div');wrap.className=i===scriptStep?'script-item script-active':'script-item';
+      const head=document.createElement('div');head.className='script-head';
+      head.textContent=`${i+1}/${items.length} · ${item.label}`;
+      const kr=document.createElement('div');kr.className='script-ko';kr.textContent=item.ko;
+      const jp=document.createElement('div');jp.className='script-ja';jp.lang='ja';jp.innerHTML=item.ja; // trusted static script
       wrap.append(head,kr,jp);field.append(wrap);
     }
+    $('scriptPrivacyHint').hidden=game.phase!=='night';
+  }
+  function advanceScript(delta) {
+    if (!game) return;
+    const total=(game.phase==='night'?S.NIGHT:game.phase==='day'?S.DAY:S.ENDED).length;
+    scriptStep=Math.max(0,Math.min(total-1,scriptStep+delta));
+    renderScript();
+    const current=$('scriptList').children[scriptStep];
+    current?.scrollIntoView?.({behavior:'smooth',block:'nearest'});
+  }
+  function renderAnnouncements() {
+    const field=$('announcements');field.replaceChildren();
+    const events=game.announcementEvents||[];
+    if (!events.length) {
+      // Historical v2 records did not have structured Japanese translations.
+      const old=game.announcements||[];
+      if (!old.length) {field.textContent='현재 발표할 내용이 없습니다. / 現在、発表はありません。';return;}
+      for (const line of old) {
+        const section=document.createElement('div');section.className='announcement-item';
+        const ko=document.createElement('div');ko.textContent=line;
+        const note=document.createElement('div');note.className='muted';note.textContent='※ v2에서 가져온 발표 기록: 일본어 번역 없음';
+        section.append(ko,note);field.append(section);
+      }
+      return;
+    }
+    for (const event of events) {
+      const spoken=S.formatEvent(event);
+      const wrap=document.createElement('div');wrap.className='announcement-item';
+      const ko=document.createElement('div');ko.className='script-ko';ko.textContent=spoken.ko;
+      const ja=document.createElement('div');ja.className='script-ja';ja.lang='ja';ja.innerHTML=spoken.ja; // S.formatEvent escapes participant names
+      wrap.append(ko,ja);field.append(wrap);
+    }
+  }
+  function announcementsToCopy() {
+    const events=game?.announcementEvents||[];
+    if (!events.length) return (game?.announcements||[]).join('\n')||'발표할 내용이 없습니다.';
+    return events.map(e=>{
+      const v=S.formatEvent(e);
+      return `${v.ko}\n${S.plainJapanese(v.ja)}`;
+    }).join('\n\n');
   }
   function render(){
     if(!loggedIn){$('workspace').hidden=true;return;}
@@ -293,7 +341,7 @@ const AUTH_CONFIG = {
     $('nightView').hidden=game.phase!=='night';$('dayView').hidden=game.phase!=='day';$('endView').hidden=game.phase!=='ended';
     $('winnerText').textContent=game.winner||'';
     renderPlayers();renderScript();makeLogs();
-    $('announcements').textContent=(game.announcements||[]).join('\n')||'현재 발표할 내용이 없습니다.';
+    renderAnnouncements();
     if(game.phase==='night')showNight();
     if(game.phase==='day')drawDay();
   }
@@ -331,10 +379,12 @@ const AUTH_CONFIG = {
     $('restoreBtn').onclick=()=>{if(previousGame){game=previousGame;previousGame=null;history=[];saveLocal();render();}};
     $('toggleRoles').onclick=()=>{rolesVisible=!rolesVisible;saveLocal();renderPlayers();};
     $('copyAnnouncements').onclick=async()=>{
-      const msg=(game?.announcements||[]).join('\n')||'발표할 내용이 없습니다.';
+      const msg=announcementsToCopy();
       try{await navigator.clipboard.writeText(msg);alert('발표문을 복사했습니다.');}
       catch{window.prompt('복사할 발표문',msg);}
     };
+    $('scriptPrev').onclick=()=>advanceScript(-1);
+    $('scriptNext').onclick=()=>advanceScript(1);
     $('timerToggle').onclick=toggleTimer;$('timerReset').onclick=resetDiscussion;
     $('discussionMinutes').onchange=()=>{if(!timer.until)resetDiscussion();};
     $('demoBtn').onclick=()=>{demoMode=true;loggedIn=true;showAuthenticated('로컬 테스트 · 인증 없음');};

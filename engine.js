@@ -1,4 +1,4 @@
-/* Mafia Host v2: platform-independent game rules. Offline, zero dependencies. */
+/* Mafia Host v3: platform-independent game rules. Offline, zero dependencies. */
 (function (root, factory) {
   const engine = factory();
   if (typeof module === 'object' && module.exports) module.exports = engine;
@@ -14,39 +14,44 @@
     soldier: { label:'군인', team:'citizen', desc:'마피아의 공격을 1회 자동 방어' },
     politician: { label:'정치가', team:'citizen', desc:'투표 2표, 투표 처형 면역' },
     lover: { label:'연인', team:'citizen', desc:'반드시 두 명. 마피아가 한 명을 공격하면 다른 연인이 대신 사망' },
-    reporter: { label:'기자', team:'citizen', desc:'둘째 밤부터 취재 대상의 직업을 아침에 익명 공개' },
+    reporter: { label:'기자', team:'citizen', desc:'둘째 밤부터 게임당 1회 취재 대상의 직업을 익명 공개' },
     terrorist: { label:'테러리스트', team:'citizen', desc:'밤 자폭 대상 지정 / 낮 투표 처형 시 적 팀과 동반 사망' },
     thug: { label:'건달', team:'citizen', desc:'밤에 한 명을 협박해 다음 낮 투표권을 박탈' },
-    priest: { label:'성직자', team:'citizen', desc:'과거에 사망한 사람 한 명을 한 번 부활' },
+    priest: { label:'성직자', team:'citizen', desc:'과거에 사망한 사람 한 명을 게임당 1회 부활' },
     nurse: { label:'간호사', team:'citizen', desc:'의사 탐색·접선 후 의사 사망 시 다음 밤부터 치료 계승' },
     officer: { label:'공무원', team:'citizen', desc:'매일 밤 직업 조사. 마피아 팀이면 정보 없음' },
+    medium: { label:'영매', team:'citizen', desc:'둘째 밤부터 게임당 1회 죽은 사람의 정확한 직업 확인 (비공개)' },
     citizen: { label:'시민', team:'citizen', desc:'고유 밤 능력 없음' }
   };
   const CONFIG_ROLES = Object.keys(ROLES).filter(k => k !== 'citizen');
   function deepCopy(x) { return JSON.parse(JSON.stringify(x)); }
   function team(role) { return ROLES[role]?.team || 'citizen'; }
+  // By preference fill every citizen slot with a distinct special role. With 18-24
+  // players, some ordinary citizens are inevitable without duplicate powers.
   function preset(n) {
     if (!Number.isInteger(n) || n < 4 || n > 24) throw new Error('참가자는 4~24명이어야 합니다.');
     const c = Object.fromEntries(CONFIG_ROLES.map(k => [k, 0]));
-    const totalMafia = n <= 6 ? 1 : n <= 10 ? 2 : n <= 15 ? 3 : n <= 20 ? 4 : 5;
+    const mafiaCount = n <= 6 ? 1 : n <= 10 ? 2 : n <= 15 ? 3 : n <= 20 ? 4 : 5;
     c.madam = n >= 9 ? 1 : 0;
     c.hitman = n >= 13 ? 1 : 0;
-    c.mafia = totalMafia - c.madam - c.hitman;
-    c.doctor = 1; c.detective = 1;
-    if (n >= 7) c.soldier = 1;
-    if (n >= 11) c.politician = 1;
-    if (n >= 13) { c.lover = 2; c.nurse = 1; }
-    if (n >= 15) c.reporter = 1;
-    if (n >= 16) c.terrorist = 1;
-    if (n >= 17) c.thug = 1;
-    if (n >= 18) c.officer = 1;
-    if (n >= 22) c.priest = 1;
-    // Keep at least 25% ordinary citizens where possible to reduce role overload.
-    const minimumCitizens = Math.max(1, Math.ceil(n * 0.25));
-    for (const k of ['priest','officer','thug','reporter','politician','terrorist','nurse','soldier','lover']) {
-      if (Object.values(c).reduce((a,b)=>a+b,0) <= n - minimumCitizens) break;
-      c[k] = 0;
+    c.mafia = mafiaCount - c.madam - c.hitman;
+    // Preference order: recommended unique powers, reserving the lover pair at 15+.
+    const soloRoles = [
+      ['doctor',4], ['detective',5], ['soldier',6], ['thug',7],
+      ['politician',8], ['terrorist',9], ['medium',10], ['nurse',11],
+      ['officer',12], ['reporter',13], ['priest',14]
+    ];
+    let slots = n - mafiaCount;
+    // Reserve both lovers at 15+ before filling individual slots (avoids a
+    // lone ordinary citizen in a 15-player game when two lover slots fit).
+    if (n >= 15 && slots >= 2) { c.lover=2; slots-=2; }
+    for (const [role] of soloRoles) {
+      if (slots === 0) break;
+      c[role]=1; slots--;
     }
+    // Never strand exactly one ordinary citizen: for 18 players, swap out one
+    // unique power so the two ordinary citizens can play the same bluff game.
+    if (slots === 1 && c.priest) { c.priest=0; slots++; }
     validateConfig(n,c);
     return c;
   }
@@ -61,7 +66,7 @@
     if (![0,2].includes(counts.lover || 0)) throw new Error('연인은 0명 또는 2명이어야 합니다.');
     if ((counts.mafia || 0) < 1) throw new Error('총을 쏘는 마피아가 최소 1명 필요합니다.');
     const total = CONFIG_ROLES.reduce((s,r) => s+(counts[r]||0),0);
-    if (total > n-1) throw new Error('특수 직업을 줄여 일반 시민을 최소 1명 남겨주세요.');
+    if (total > n) throw new Error('배정한 직업 수가 전체 참가자 수보다 많습니다.');
     const mafiaCount = ['mafia','madam','hitman'].reduce((s,r)=>s+(counts[r]||0),0);
     if (mafiaCount >= n-mafiaCount) throw new Error('마피아 팀이 시민 팀보다 적도록 조정하세요.');
     return n-total;
@@ -77,11 +82,11 @@
       const j = Math.floor(random() * (i+1));
       [roles[i],roles[j]] = [roles[j],roles[i]];
     }
-    return { version:2, round:1, phase:'night', winner:null,
+    return { version:3, round:1, phase:'night', winner:null,
       players:clean.map((name,id)=>({ id, name, role:roles[id], alive:true, soldierShieldUsed:false })),
-      contact:{madam:false, hitman:false, nurse:false}, used:{priest:false},
+      contact:{madam:false, hitman:false, nurse:false}, used:{priest:false,reporter:false,medium:false},
       blockedVoter:null, logs:[{round:0,phase:'setup',private:`참가자 ${clean.length}명 / 마피아 팀 ${clean.filter((_,i)=>team(roles[i])==='mafia').length}명으로 시작`,public:[]}],
-      announcements:[], settings:{counts:deepCopy(counts)} };
+      announcements:[], announcementEvents:[], settings:{counts:deepCopy(counts)} };
   }
   function byId(g,id) {
     if (id === undefined || id === null || id === '') return null;
@@ -97,15 +102,19 @@
     if (mafia >= alive.length-mafia) return '마피아 팀 승리';
     return null;
   }
-  function record(g,phase,priv,pub) {
+  function record(g,phase,priv,pub,publicEvents=[]) {
     const publicMessages = Array.from(new Set(pub));
-    g.logs.push({round:g.round,phase,private:priv.join('\n'),public:publicMessages});
+    const uniqueEvents = publicEvents.filter((e,i,arr)=>
+      arr.findIndex(x=>JSON.stringify(x)===JSON.stringify(e))===i);
+    g.logs.push({round:g.round,phase,private:priv.join('\n'),public:publicMessages,publicEvents:uniqueEvents});
     g.announcements=publicMessages;
+    g.announcementEvents=uniqueEvents;
     const winner=checkWin(g);
     if (winner) {
-      g.winner=winner; g.phase='ended';
+      g.winner=winner;g.phase='ended';
       g.announcements.push(`게임 종료: ${winner}`);
-      g.logs.push({round:g.round,phase:'ended',private:winner,public:[`게임 종료: ${winner}`]});
+      g.announcementEvents.push({type:'win',winner});
+      g.logs.push({round:g.round,phase:'ended',private:winner,public:[`게임 종료: ${winner}`],publicEvents:[{type:'win',winner}]});
     }
     return g;
   }
@@ -114,12 +123,12 @@
   }
   function resolveNight(input, choices={}) {
     if (input.phase !== 'night') throw new Error('현재 밤 단계가 아닙니다.');
-    const g=deepCopy(input), priv=[],pub=[], dead=[];
+    const g=deepCopy(input), priv=[],pub=[], events=[], dead=[];
     const isOn = (r)=>active(g,r);
     const pick=(key)=>isAliveTarget(g,choices[key]);
     const targetedByMadam=pick('madamTarget');
     let sealedId=null;
-    if (isOn('madam') && targetedByMadam) {
+    if (isOn('madam') && targetedByMadam && targetedByMadam.id!==isOn('madam').id) {
       if (targetedByMadam.role==='mafia') {
         if (!g.contact.madam) priv.push(`마담 ↔ 마피아 접선 성공: ${targetedByMadam.name}`);
         g.contact.madam=true;
@@ -137,7 +146,7 @@
       return true;
     };
     const shooter = isAliveTarget(g,choices.mafiaShooter);
-    const shooterValid=shooter?.role==='mafia' && enabled('mafia') && shooter.id!==sealedId;
+    const shooterValid=shooter?.role==='mafia' && shooter.id!==sealedId;
     // One normal mafia shooter per night, even if several are alive.
     const target = shooterValid ? pick('mafiaTarget') : null;
     if (target && team(target.role)==='mafia') {
@@ -183,15 +192,19 @@
       else if (mafiaAttack.role==='soldier' && !mafiaAttack.soldierShieldUsed && mafiaAttack.id!==sealedId) {
         mafiaAttack.soldierShieldUsed=true;
         priv.push(`군인 방탄 1회 소모: ${mafiaAttack.name}`);
+        pub.push('군인이 마피아의 공격을 막아냈습니다. 군인의 이름은 공개하지 않습니다.');
+        events.push({type:'soldierBlock'});
       } else if (mafiaAttack.role==='terrorist' && marked?.id===shooter.id && enabled('terrorist')) {
         killed(mafiaAttack,'테러리스트 자폭');
         killed(shooter,'테러리스트 자폭에 휘말린 마피아');
-        pub.push(`${mafiaAttack.name}와 ${shooter.name}이(가) 밤에 함께 사망했습니다.`);
+        pub.push(`테러리스트 ${mafiaAttack.name}와 ${shooter.name}이(가) 자폭으로 함께 사망했습니다.`);
+        events.push({type:'terrorNight',terrorist:mafiaAttack.name,mafia:shooter.name});
       } else if (mafiaAttack.role==='lover') {
         const other=g.players.find(p=>p.role==='lover' && p.alive && p.id!==mafiaAttack.id);
         if (other) {
           killed(other,`${mafiaAttack.name} 대신 희생한 연인`);
-          pub.push(`${mafiaAttack.name} 대신 연인 ${other.name}이(가) 희생했습니다.`);
+          pub.push(`${mafiaAttack.name}와 ${other.name}은(는) 연인입니다. ${mafiaAttack.name} 대신 ${other.name}이(가) 희생했습니다.`);
+          events.push({type:'loverSacrifice',attacked:mafiaAttack.name,sacrificed:other.name});
         } else killed(mafiaAttack,'마피아 공격 (연인 동료 없음)');
       } else killed(mafiaAttack,'마피아 공격');
     } else if (!target) priv.push('이번 밤 마피아 공격 없음');
@@ -204,6 +217,7 @@
         g.used.priest=true;
         priv.push(`성직자 부활: ${rez.name} (${ROLES[rez.role].label}), 능력 1회 소모`);
         pub.push(`${rez.name}이(가) 부활했습니다.`);
+        events.push({type:'revive',name:rez.name});
       }
     }
     // Detective/officer results are for the host and the actor only.
@@ -215,20 +229,38 @@
       const t=pick('officerTarget');
       if (t) priv.push(`공무원 조사 ${t.name}: ${team(t.role)==='mafia'?'정보 없음':ROLES[t.role].label}`);
     }
-    if (enabled('reporter') && g.round>=2) {
+    if (enabled('reporter') && g.round>=2 && !g.used.reporter) {
       const t=pick('reporterTarget');
       if (t) {
-        priv.push(`기자 취재: ${t.name} / ${ROLES[t.role].label}`);
+        priv.push(`기자 취재: ${t.name} / ${ROLES[t.role].label} (1회 소모)`);
         pub.push(`익명 취재 결과: ${t.name}의 직업은 ${ROLES[t.role].label}입니다.`);
+        events.push({type:'report',name:t.name,role:t.role});
+        g.used.reporter=true;
+      }
+    }
+    // Medium can inspect one previously dead player's actual role, once from night 2.
+    // Does not reveal the identity of the medium to the public.
+    if (enabled('medium') && g.round>=2 && !g.used.medium) {
+      const target=byId(g,choices.mediumTarget);
+      const alreadyDead=input.players.some(p=>p.id===target?.id && !p.alive);
+      if (target && alreadyDead) {
+        g.used.medium=true;
+        priv.push(`영매 사망자 확인: ${target.name} / ${ROLES[target.role].label} (1회 소모 · 비공개)`);
       }
     }
     // If other non-publicized night deaths occurred, announce names, not roles.
     for (const name of dead) {
-      if (!pub.some(line=>line.includes(name))) pub.unshift(`${name}이(가) 밤에 사망했습니다.`);
+      if (!pub.some(line=>line.includes(name))) {
+        pub.unshift(`${name}이(가) 밤에 사망했습니다.`);
+        events.unshift({type:'nightDeath',name});
+      }
     }
-    if (dead.length===0 && !pub.some(s=>s.includes('부활'))) pub.unshift('지난밤 사망자는 없습니다.');
+    if (dead.length===0) {
+      pub.unshift('지난밤 사망자는 없습니다.');
+      events.unshift({type:'noNightDeaths'});
+    }
     g.phase='day';
-    return record(g,'night',priv,pub);
+    return record(g,'night',priv,pub,events);
   }
   function voteSummary(g,votes={}) {
     const tally={yes:0,no:0,abstain:0,blocked:[]};
@@ -244,7 +276,7 @@
   }
   function resolveDay(input, choices={}) {
     if (input.phase!=='day') throw new Error('현재 낮 단계가 아닙니다.');
-    const g=deepCopy(input), priv=[],pub=[];
+    const g=deepCopy(input), priv=[],pub=[],events=[];
     const candidate=isAliveTarget(g,choices.candidate);
     if (!candidate) priv.push('오늘 투표 처형 대상 없음');
     else {
@@ -254,28 +286,33 @@
       if (s.yes>s.no) {
         if (candidate.role==='politician') {
           priv.push('정치가는 투표 처형 면역');
-          pub.push(`${candidate.name}은(는) 투표 처형되지 않았습니다.`);
+          pub.push(`${candidate.name}은(는) 정치인(정치가)입니다. 처세 능력으로 투표 처형을 면했습니다.`);
+          events.push({type:'politicianAvoid',name:candidate.name});
         } else {
           candidate.alive=false;
           candidate.deathReason='낮 투표 처형';candidate.diedRound=g.round;
           priv.push(`${candidate.name} 처형 (${ROLES[candidate.role].label})`);
           pub.push(`${candidate.name}이(가) 투표로 처형되었습니다.`);
+          events.push({type:'dayDeath',name:candidate.name});
           if (candidate.role==='terrorist') {
             const blast=isAliveTarget(g,choices.terrorDayTarget);
             if (blast) {
               if (team(blast.role)==='mafia') {
                 blast.alive=false; blast.deathReason='테러리스트 산화';blast.diedRound=g.round;
                 priv.push(`테러리스트 산화 성공: ${blast.name} (${ROLES[blast.role].label})`);
-                pub.push(`테러리스트 ${candidate.name}와 ${blast.name}이(가) 함께 사망했습니다.`);
+                pub.pop(); // Specific paired-death speech replaces the generic execution speech.
+                events.pop();
+                pub.push(`테러리스트 ${candidate.name}와 ${blast.name}이(가) 산화로 함께 사망했습니다.`);
+                events.push({type:'terrorDay',terrorist:candidate.name,mafia:blast.name});
               } else priv.push(`산화 실패: ${blast.name}은 시민 팀이므로 테러리스트만 사망`);
             }
           }
         }
-      } else { priv.push('찬성이 반대를 초과하지 않아 처형 없음'); pub.push('투표 결과 처형된 사람은 없습니다.'); }
+      } else { priv.push('찬성이 반대를 초과하지 않아 처형 없음'); pub.push('투표 결과 처형된 사람은 없습니다.'); events.push({type:'noExecution'}); }
     }
     g.blockedVoter=null;
     g.phase='night';
-    const next=record(g,'day',priv,pub);
+    const next=record(g,'day',priv,pub,events);
     if (next.phase!=='ended') next.round += 1;
     return next;
   }

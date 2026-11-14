@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#11152b">
   <meta name="description" content="오프라인 마피아 게임을 위한 사회자 전용 보조 웹앱">
-  <title>마피아 사회자 도우미 v2</title>
+  <title>마피아 사회자 도우미 v3</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -50,7 +50,7 @@
       </div>
       <div id="nameInputs" class="name-grid"></div>
       <div class="bar spaced"><h3>직업 구성</h3><button class="btn outline small" id="presetBtn">추천 밸런스 적용</button></div>
-      <p class="muted">인원에 따라 자동 추천됩니다. 직접 숫자를 수정해도 됩니다. 연인은 정확히 2명 또는 0명으로 배정하세요.</p>
+      <p class="muted">가능한 한 전원에게 특수 직업을 배정합니다. 중복 특수 직업은 지원하지 않아 대규모 게임에서는 일반 시민이 일부 배정될 수 있습니다. 직접 인원을 조정할 수 있고 연인은 0명 또는 2명입니다.</p>
       <div id="roleCounts" class="role-grid"></div>
       <p class="summary" id="roleSummary" aria-live="polite"></p>
       <p class="warning" id="setupError" role="alert" hidden></p>
@@ -73,10 +73,12 @@
           </section>
           <section class="card">
             <h2>04 · 사회자 진행 대본 <span class="muted micro">한국어 · 일본어 + 요미가나</span></h2>
+            <p id="scriptPrivacyHint" class="warning"><b>중요:</b> 모든 밤에 모든 직업을 정해진 순서 그대로 읽으세요. 해당 직업이 처음부터 없었거나, 죽었거나, 1회 능력을 사용했더라도 생략하면 안 됩니다. 대기 시간도 가능한 한 비슷하게 유지하세요.</p>
+            <div class="script-nav bar"><strong id="scriptProgress">첫 단계</strong><div class="actions compact"><button class="btn outline small" id="scriptPrev">← 이전</button><button class="btn outline small" id="scriptNext">다음 →</button></div></div>
             <div class="script-list" id="scriptList"></div>
           </section>
           <section class="card">
-            <h2>05 · 공개 발표문 <span class="muted micro">참가자에게 읽어 줄 수 있는 내용</span></h2>
+            <h2>05 · 공개 발표문 <span class="muted micro">한국어 · 일본어(요미가나) 동시 출력</span></h2>
             <div class="announcement" id="announcements">현재 발표할 내용이 없습니다.</div>
             <div class="actions"><button class="btn outline small" id="copyAnnouncements">발표문 복사</button></div>
           </section>
@@ -112,9 +114,10 @@
       </div>
     </div>
   </div>
-  <footer>v2.0 · 게임은 오프라인에서 진행되고 사회자 입력만 기록됩니다. 로그인 활성화에는 첫 인증 시 인터넷 연결이 필요합니다.</footer>
+  <footer>v3.0 · 게임은 오프라인에서 진행되고 사회자 입력만 기록됩니다. 로그인 활성화에는 첫 인증 시 인터넷 연결이 필요합니다.</footer>
 </main>
 <script src="engine.js"></script>
+<script src="scripts.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
