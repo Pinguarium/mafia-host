@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>마피아 사회자 도우미</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --card:#161f33; --line:#2b3953; --text:#f5f7ff; --muted:#a9b8ce; --accent:#8b9cff; --red:#ff747b; --green:#80ddb5; }
+    * { box-sizing: border-box; }
+    body { margin:0; background: radial-gradient(circle at top right, #25305b, var(--bg) 55%); color:var(--text); font-family: system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; line-height:1.55; }
+    main { width:min(900px, 100%); padding:28px 16px 70px; margin:auto; }
+    header { margin-bottom:24px; }
+    .eyebrow { color:var(--accent); font-weight:800; font-size:13px; letter-spacing:.08em; }
+    h1 { font-size:clamp(28px,5vw,38px); margin:6px 0; }
+    h2 { font-size:20px; margin:0 0 16px; }
+    p { margin:8px 0; }
+    .muted { color:var(--muted); font-size:14px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 10px 32px #0206172b; margin-bottom:16px; }
+    label { display:block; font-weight:700; margin:14px 0 7px; }
+    input[type=number],textarea,select { width:100%; background:#0f1728; color:var(--text); border:1px solid #40506d; border-radius:10px; padding:12px; font:inherit; }
+    textarea { min-height:180px; resize:vertical; }
+    input[type=checkbox] { accent-color:var(--accent); transform:scale(1.2); }
+    .checks { display:flex; flex-wrap:wrap; gap:16px; padding:8px 0; }
+    .checks label { margin:0; display:flex; align-items:center; gap:9px; }
+    .btn { display:inline-flex; justify-content:center; align-items:center; min-height:44px; padding:11px 17px; border:0; border-radius:10px; color:#0e1530; font-weight:800; background:var(--accent); cursor:pointer; font-size:15px; }
+    .btn.secondary { background:#34415c; color:#fff; }
+    .btn.danger { background:#5b303b; color:#ffe4e8; }
+    .btn:focus-visible, input:focus-visible,select:focus-visible,textarea:focus-visible { outline:3px solid #b8c1ff; outline-offset:2px; }
+    .bar { display:flex; gap:10px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .pill { border-radius:999px; background:#283456; color:#dce1ff; padding:5px 12px; font-weight:800; font-size:13px; }
+    table { border-collapse:collapse; width:100%; }
+    th,td { border-bottom:1px solid var(--line); padding:12px 8px; text-align:left; }
+    th { color:var(--muted); font-size:13px; }
+    .dead { opacity:.48; text-decoration:line-through; }
+    .tag { display:inline-block; border:1px solid #53617a; padding:2px 8px; border-radius:8px; font-size:12px; }
+    .warning { border-left:3px solid var(--red); padding-left:12px; color:#ffccd0; }
+    .result { font-size:18px; font-weight:800; color:var(--green); }
+    ol { padding-left:22px; margin:8px 0 0; }
+    li { margin-bottom:8px; overflow-wrap:anywhere; }
+    [hidden] { display:none !important; }
+    @media(max-width:600px) { .grid { grid-template-columns:1fr; } .card { padding:18px; } th,td { padding:10px 5px; font-size:14px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">HOST ONLY · 사회자 전용</div>
+    <h1>🕵️ 마피아 사회자 도우미</h1>
+    <p class="muted">참가자 등록부터 역할 배정, 밤·낮 진행까지 한 화면에서 관리하세요.</p>
+  </header>
+
+  <section class="card" id="setup">
+    <h2>1. 새 게임 만들기</h2>
+    <label for="names">참가자 이름 (한 줄에 한 명)</label>
+    <textarea id="names" placeholder="민수&#10;지연&#10;도윤&#10;하린&#10;수빈&#10;준호"></textarea>
+    <div class="grid">
+      <div><label for="mafiaCount">마피아 인원</label><input id="mafiaCount" type="number" min="1" value="1"></div>
+      <div><label>특수 직업</label><div class="checks"><label><input id="hasDoctor" type="checkbox" checked> 의사 1명</label><label><input id="hasDetective" type="checkbox" checked> 경찰 1명</label></div></div>
+    </div>
+    <p class="muted">나머지는 시민으로 배정됩니다. 이름은 중복 없이 입력하세요.</p>
+    <button class="btn" id="startBtn" type="button">무작위 역할 배정 · 게임 시작</button>
+  </section>
+
+  <div id="game" hidden>
+    <section class="card">
+      <div class="bar"><h2 style="margin:0">현재 진행</h2><span class="pill" id="phaseBadge"></span></div>
+      <p id="statusText"></p>
+      <p class="warning">아래 역할과 기록은 사회자만 볼 수 있도록 화면을 가려주세요.</p>
+      <div class="bar"><span class="muted" id="aliveText"></span><button id="resetBtn" type="button" class="btn danger">게임 초기화</button></div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>2. 참가자와 역할</h2>
+        <table><thead><tr><th>이름</th><th>역할</th><th>상태</th></tr></thead><tbody id="playersBody"></tbody></table>
+      </section>
+      <section class="card">
+        <h2>3. 사회자 진행</h2>
+        <div id="nightPanel">
+          <p class="muted">마피아가 선택한 공격 대상자를 입력하세요.</p>
+          <label for="killTarget">마피아 공격 대상</label><select id="killTarget"></select>
+          <div id="doctorField"><label for="saveTarget">의사 보호 대상 (선택)</label><select id="saveTarget"></select></div>
+          <div id="detectiveField"><label for="checkTarget">경찰 조사 대상 (선택)</label><select id="checkTarget"></select></div>
+          <p class="muted">공격 대상과 보호 대상이 같으면 사망자가 없습니다.</p>
+          <button id="nightBtn" type="button" class="btn">밤 결과 확정 → 낮</button>
+        </div>
+        <div id="dayPanel" hidden>
+          <p class="muted">낮 토론과 투표를 진행한 뒤 결과를 선택하세요.</p>
+          <label for="voteTarget">최종 처형 대상</label><select id="voteTarget"></select>
+          <button id="dayBtn" type="button" class="btn">투표 결과 확정 → 밤</button>
+        </div>
+        <div id="endPanel" hidden><p class="result" id="winnerText"></p><p class="muted">새 게임을 시작하려면 '게임 초기화'를 누르세요.</p></div>
+      </section>
+    </div>
+    <section class="card"><h2>4. 진행 기록</h2><ol id="logList"></ol></section>
+  </div>
+  <p class="muted">이 앱은 서버 없이 동작합니다. 게임 정보는 현재 브라우저에만 저장되며 다른 기기와 동기화되지 않습니다.</p>
+</main>
+<script>
+  const KEY = 'mafia-host-v1';
+  const $ = id => document.getElementById(id);
+  const roleNames = { mafia: '🔴 마피아', doctor: '💚 의사', detective: '🔵 경찰', citizen: '⚪ 시민' };
+  let game = null;
+  try { game = JSON.parse(localStorage.getItem(KEY)); } catch { game = null; }
+  if (!game || !Array.isArray(game.players) || !['night','day','ended'].includes(game.phase)) game = null;
+
+  function save() {
+    try { if (game) localStorage.setItem(KEY, JSON.stringify(game)); else localStorage.removeItem(KEY); }
+    catch { alert('브라우저에 저장하지 못했습니다. 저장 공간이나 시크릿 모드를 확인하세요.'); }
+    render();
+  }
+  function shuffle(items) {
+    const array = [...items];
+    for (let i=array.length-1; i>0; i--) {
+      const j = Math.floor(Math.random() * (i+1));
+      [array[i],array[j]] = [array[j],array[i]];
+    }
+    return array;
+  }
+  function player(id) { return id === '' || id === null || id === undefined ? null : game.players.find(p => p.id === Number(id)); }
+  function alive() { return game.players.filter(p => p.alive); }
+  function activeRole(role) { return alive().some(p => p.role === role); }
+  function nameOf(id) { return player(id)?.name || '알 수 없음'; }
+  function options(selectId, includeNone, required) {
+    const select = $(selectId);
+    select.replaceChildren();
+    if (includeNone) select.add(new Option('선택 안 함', ''));
+    if (!required && !includeNone) select.add(new Option('처형 없음', ''));
+    for (const p of alive()) select.add(new Option(p.name, String(p.id)));
+  }
+  function victory() {
+    const remaining = alive();
+    const mafia = remaining.filter(p => p.role === 'mafia').length;
+    const others = remaining.length - mafia;
+    if (mafia === 0) return '시민 팀 승리! 🎉';
+    if (mafia >= others) return '마피아 팀 승리! 🕶️';
+    return null;
+  }
+  function finishIfNeeded() {
+    const winner = victory();
+    if (!winner) return false;
+    game.phase = 'ended';
+    game.winner = winner;
+    game.logs.push(winner);
+    return true;
+  }
+  function render() {
+    $('setup').hidden = !!game;
+    $('game').hidden = !game;
+    if (!game) return;
+    const remaining = alive();
+    const mafia = remaining.filter(p => p.role === 'mafia').length;
+    $('phaseBadge').textContent = game.phase === 'ended' ? '게임 종료' : `${game.round}일 차 · ${game.phase === 'night' ? '밤 🌙' : '낮 ☀️'}`;
+    $('statusText').textContent = game.phase === 'night' ? '마피아 공격과 특수 직업 행동을 확인하세요.' : game.phase === 'day' ? '토론과 투표 결과를 입력하세요.' : '모든 라운드가 종료되었습니다.';
+    $('aliveText').textContent = `생존 ${remaining.length}명 / 전체 ${game.players.length}명 · 생존 마피아 ${mafia}명`;
+    $('playersBody').replaceChildren();
+    for (const p of game.players) {
+      const tr = document.createElement('tr');
+      for (const label of [p.name, roleNames[p.role], p.alive ? '생존' : '탈락']) {
+        const td = document.createElement('td'); td.textContent = label; tr.appendChild(td);
+      }
+      if (!p.alive) tr.className = 'dead';
+      $('playersBody').appendChild(tr);
+    }
+    $('nightPanel').hidden = game.phase !== 'night';
+    $('dayPanel').hidden = game.phase !== 'day';
+    $('endPanel').hidden = game.phase !== 'ended';
+    $('winnerText').textContent = game.winner || '';
+    if (game.phase === 'night') {
+      options('killTarget', false, true);
+      $('doctorField').hidden = !activeRole('doctor');
+      $('detectiveField').hidden = !activeRole('detective');
+      if (activeRole('doctor')) options('saveTarget', true, false);
+      if (activeRole('detective')) options('checkTarget', true, false);
+    }
+    if (game.phase === 'day') options('voteTarget', true, false);
+    $('logList').replaceChildren();
+    for (const line of [...game.logs].reverse()) {
+      const li = document.createElement('li'); li.textContent = line; $('logList').appendChild(li);
+    }
+  }
+  $('startBtn').addEventListener('click', () => {
+    const names = $('names').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const mafia = Number($('mafiaCount').value);
+    const roles = [ ...Array(mafia).fill('mafia'), ...($('hasDoctor').checked ? ['doctor'] : []), ...($('hasDetective').checked ? ['detective'] : []) ];
+    if (names.length < 4) return alert('참가자는 최소 4명 이상 입력하세요.');
+    if (new Set(names).size !== names.length) return alert('참가자 이름은 중복할 수 없습니다.');
+    if (!Number.isInteger(mafia) || mafia < 1 || roles.length >= names.length) return alert('마피아 인원과 특수 직업 수를 확인하세요. 시민이 최소 1명 필요합니다.');
+    while (roles.length < names.length) roles.push('citizen');
+    const shuffled = shuffle(roles);
+    game = { players: names.map((name,id) => ({ id, name, role: shuffled[id], alive: true })), round:1, phase:'night', winner:null, logs:[`게임 시작 · 참가자 ${names.length}명, 마피아 ${mafia}명`] };
+    save();
+  });
+  $('nightBtn').addEventListener('click', () => {
+    if (!game || game.phase !== 'night') return;
+    const victim = player($('killTarget').value);
+    const saved = activeRole('doctor') ? player($('saveTarget').value) : null;
+    const checked = activeRole('detective') ? player($('checkTarget').value) : null;
+    if (!victim || !victim.alive) return alert('공격 대상을 선택하세요.');
+    const lines = [`${game.round}일 차 밤: 마피아 공격 → ${victim.name}`];
+    if (checked) lines.push(`경찰 조사 → ${checked.name}: ${checked.role === 'mafia' ? '마피아' : '마피아 아님'}`);
+    if (saved && saved.id === victim.id) lines.push(`${victim.name} 보호 성공 · 사망자 없음`);
+    else { victim.alive = false; lines.push(`${victim.name} 사망 (${roleNames[victim.role]})`); }
+    game.logs.push(...lines);
+    if (!finishIfNeeded()) game.phase = 'day';
+    save();
+  });
+  $('dayBtn').addEventListener('click', () => {
+    if (!game || game.phase !== 'day') return;
+    const target = player($('voteTarget').value);
+    if (target && target.alive) { target.alive = false; game.logs.push(`${game.round}일 차 낮: ${target.name} 투표로 탈락 (${roleNames[target.role]})`); }
+    else game.logs.push(`${game.round}일 차 낮: 투표 탈락자 없음`);
+    if (!finishIfNeeded()) { game.round++; game.phase = 'night'; }
+    save();
+  });
+  $('resetBtn').addEventListener('click', () => {
+    if (!confirm('현재 게임 기록과 역할을 모두 삭제하고 새 게임을 시작할까요?')) return;
+    game = null;
+    save();
+  });
+  render();
+</script>
+</body>
+</html>
