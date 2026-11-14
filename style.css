@@ -6,3 +6,17 @@
 .announcement-item{padding:11px 2px;border-bottom:1px solid #34545b;overflow-wrap:anywhere}.announcement-item:last-child{border:0}.announcement-item .script-ko{margin-bottom:3px}.announcement-item .script-ja{line-height:2.5}.announcement-item ruby{ruby-position:over}.announcement-item rt{font-size:9px;color:#b4d1db}
 
 .script-nav{position:sticky;top:0;z-index:3;background:#1d2943;border:1px solid #4c5c7a;padding:9px 11px;border-radius:10px;margin:13px 0}.script-nav strong{font-size:13px}.script-active{outline:2px solid #a8a7ff;background:#242944}.script-active .script-head{color:#e1ddff}
+
+/* v4: one screen for the spoken cue, confidential actor details and action input. */
+.hint-tip{padding:11px 12px;border-radius:9px;background:#273450;border-left:3px solid #9298e9;font-size:13px;margin:7px 0 12px}
+.flow-count{font-size:12px;color:#ccd6f6;background:#1a2942;padding:9px 11px;border-radius:8px}
+.private-result{padding:15px;border:1px solid #7bbdb6;background:#12353d;border-radius:11px;line-height:1.8}
+.private-result b{color:#baffef}.private-result p{margin:8px 0 0;font-weight:700;white-space:pre-wrap}
+#nightFields h3{margin:8px 0;font-size:19px}
+#scriptSection{border-color:#5e618c}
+@media(min-width:981px){#scriptSection{position:sticky;top:10px;z-index:3;max-height:70vh;overflow:auto}}
+
+@media(max-width:980px){.layout{display:flex;flex-direction:column}.layout>div:nth-child(2){order:-1}}
+
+.privacy-cover{position:fixed;inset:0;z-index:999;background:#080d19;display:grid;place-items:center;text-align:center;padding:25px}
+.privacy-cover>div{max-width:360px}.privacy-cover .cover-icon{font-size:50px}.privacy-cover p{color:#bdc8de}

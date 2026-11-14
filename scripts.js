@@ -1,4 +1,4 @@
-/* v3: Fixed, information-leak-resistant night call order and bilingual public speech. */
+/* v4: Silent shoulder-tap flow, full double-pass, bilingual day and public speech. */
 (function (root, factory) {
   const scripts=factory();
   if (typeof module==='object' && module.exports) module.exports=scripts;
@@ -33,16 +33,45 @@
     ['medium','영매',`${R('霊媒師','れいばいし')}`,'사용 조건이 되면 직업을 확인할 사망자를 선택해 주세요.',`${R('使用条件','しようじょうけん')}を${R('満','み')}たしていれば、${J.role}を${R('確認','かくにん')}する${R('死者','ししゃ')}を${J.choice}んでください。`],
     ['citizen','시민',`${R('市民','しみん')}`,'별도의 밤 행동은 없습니다. 확인 후 대기해 주세요.',`${J.night}の${R('行動','こうどう')}はありません。そのままお${R('待','ま')}ちください。`]
   ];
-  // This is global and NEVER filtered by players, living status, round or used abilities.
-  const NIGHT_ORDER=Object.freeze(roles.map(r=>r[0]));
-  const NIGHT=Object.freeze([
-    Object.freeze({label:'밤 시작',role:null,ko:'모두 눈을 감아 주세요. 이제 밤이 시작됩니다.',ja:`みなさん、${J.eye}を${J.close}じてください。${J.night}が${R('始','はじ')}まります。`}),
-    ...roles.map(([role,label,jname,ko,jprompt])=>Object.freeze({
-      role,label,ko:`${label}은(는) 눈을 뜨세요. ${ko} 행동을 마쳤다면 눈을 감아 주세요.`,
-      ja:`${jname}の${J.eye}を${J.open}けてください。${jprompt}${R('行動','こうどう')}が${J.end}わったら${J.eye}を${J.close}じてください。`
-    })),
-    Object.freeze({label:'밤 종료',role:null,ko:'모두 눈을 감은 상태를 유지해 주세요. 아침 발표를 준비하겠습니다.',ja:`${J.eye}を${J.close}じたままお${R('待','ま')}ちください。${J.morning}の${R('発表','はっぴょう')}を${J.ready}します。`})
-  ]);
+  /* v4: No role names are spoken at night. Each living participant gets the
+     SAME two passes in fixed SEAT order, whether they have a power or not.
+     Mafia shooters first awake TOGETHER for one joint choice. */
+  const INTRO={id:'intro',kind:'intro',label:'밤 시작 · 공통 안내',
+    ko:'밤이 되었습니다. 모두 눈을 감아 주세요. 사회자가 어깨를 가볍게 건드린 분만 눈을 뜨고 조용히 행동해 주세요. 행동이 끝나면 다시 눈을 감아 주세요.',
+    ja:`${J.night}になりました。みなさん、${J.eye}を${J.close}じてください。${R('肩','かた')}に${R('軽','かる')}く${R('触','ふ')}れられた${J.person}だけ${J.eye}を${J.open}けて、${R('静','しず')}かに${R('行動','こうどう')}してください。${J.end}わったら${J.eye}を${J.close}じてください。`,
+    privateNote:'모든 참가자에게 밤 신호와 진행 방법을 설명합니다. 접촉은 반드시 사전에 동의를 받으세요.'};
+  const GROUP={id:'mafia-group',kind:'group',label:'마피아 공동 공격 · 사회자 전용',
+    ko:'모두 눈을 감은 채 조용히 기다려 주세요.',
+    ja:`みなさん、${J.eye}を${J.close}じたまま${R('静','しず')}かにお${R('待','ま')}ちください。`,
+    privateNote:'살아 있는 일반 마피아들만 조용히 차례대로 터치해 모두 눈을 뜨게 합니다. 한 명의 공격 대상과 총격 실행자를 공동으로 정한 뒤 전원 다시 눈을 감게 합니다. 이 안내에서 마피아라는 단어는 소리 내어 말하지 마세요. 접선한 마담·청부업자는 여기서 깨우지 않고 개인 차례에 진행합니다.'};
+  const CHOICE={ko:'어깨를 건드린 분만 조용히 눈을 뜨고, 필요한 행동을 마친 뒤 다시 눈을 감아 주세요.',
+    ja:`${R('肩','かた')}に${R('触','ふ')}れられた${J.person}だけ${R('静','しず')}かに${J.eye}を${J.open}け、${R('必要','ひつよう')}な${R('行動','こうどう')}が${J.end}わったら${J.eye}を${J.close}じてください。`};
+  const FEEDBACK_INTRO={id:'feedback-intro',kind:'intro',label:'비공개 결과 전달 시작',
+    ko:'모두 눈을 감은 상태를 유지해 주세요. 이제 차례대로 확인하겠습니다.',
+    ja:`みなさん、${J.eye}を${J.close}じたままお${R('待','ま')}ちください。これから${R('順番','じゅんばん')}に${R('確認','かくにん')}します。`,
+    privateNote:'조사 결과는 능력 봉인을 포함한 모든 선택을 계산한 뒤 알려줍니다. 밤 시작 시 생존자 전원을 다시 같은 자리 순서로 터치합니다. 비공개 결과가 없는 참가자도 반드시 터치하세요.'};
+  const FINISH_CHOICE={id:'choices-finish',kind:'end',label:'1차 행동 입력 마무리',
+    ko:'모두 눈을 감은 상태로 기다려 주세요.',
+    ja:`みなさん、${J.eye}を${J.close}じたままお${R('待','ま')}ちください。`,
+    privateNote:'선택을 검토하고 비공개 결과 전달 단계로 넘어가세요. 결과 전달 전에는 생존·사망 결과를 전체 공개하지 마세요.'};
+  const FINISH_NIGHT={id:'night-finish',kind:'end',label:'밤 종료 · 아침 발표 준비',
+    ko:'모두 눈을 감고 기다려 주세요. 이제 아침 결과를 발표하겠습니다.',
+    ja:`みなさん、${J.eye}を${J.close}じてお${R('待','ま')}ちください。これから${J.morning}の${R('結果','けっか')}を${R('発表','はっぴょう')}します。`,
+    privateNote:'모든 생존자를 같은 순서로 확인했는지 점검한 뒤 밤 행동을 확정하세요.'};
+  function nightSteps(game,pass='choices') {
+    const players=game.players.filter(p=>p.alive).sort((a,b)=>a.id-b.id);
+    const people=players.map(p=>({
+      id:`person-${p.id}`,kind:'person',playerId:p.id,
+      label:`${p.id+1}번 자리 · ${p.name}`, // Host-only label; NEVER read this aloud.
+      ko:pass==='choices'?CHOICE.ko:FEEDBACK_INTRO.ko,
+      ja:pass==='choices'?CHOICE.ja:FEEDBACK_INTRO.ja,
+      privateNote:pass==='choices'
+        ? '참가자 본인만 눈을 뜹니다. 사회자는 화면의 직업과 능력 입력을 확인하고 행동 여부와 관계없이 같은 시간을 사용하세요.'
+        : '필요한 경우 비공개 결과를 손짓·결과 카드·화면으로 조용히 보여 주세요. 결과가 없어도 동일하게 확인합니다.'
+    }));
+    return pass==='feedback' ? [FEEDBACK_INTRO,...people,FINISH_NIGHT]
+      : [INTRO,GROUP,...people,FINISH_CHOICE];
+  }
   const DAY=Object.freeze([
     {label:'아침 시작',ko:'아침이 밝았습니다. 지난밤 결과를 발표하겠습니다.',ja:`${J.morning}になりました。${R('昨夜','さくや')}の${R('結果','けっか')}を${R('発表','はっぴょう')}します。`},
     {label:'토론',ko:'이제 토론을 시작합니다. 필요할 때만 토론 타이머를 사용합니다.',ja:`これから${R('議論','ぎろん')}を${R('始','はじ')}めます。${R('必要','ひつよう')}な${R('時','とき')}だけタイマーを${R('使','つか')}います。`},
@@ -81,5 +110,5 @@
     }
   }
   function plainJapanese(html){return html.replace(/<ruby>(.*?)<rt>(.*?)<\/rt><\/ruby>/g,'$1($2)').replace(/<[^>]*>/g,'');}
-  return {NIGHT,NIGHT_ORDER,DAY,ENDED,formatEvent,plainJapanese,escape};
+  return {nightSteps,DAY,ENDED,formatEvent,plainJapanese,escape};
 });

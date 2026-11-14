@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#11152b">
   <meta name="description" content="오프라인 마피아 게임을 위한 사회자 전용 보조 웹앱">
-  <title>마피아 사회자 도우미 v3</title>
+  <title>마피아 사회자 도우미 v4</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
     <div>
       <div class="eyebrow">MAFIA HOST · OFFLINE GAME COMPANION</div>
       <h1>🎭 마피아 사회자 도우미</h1>
-      <p class="muted">실제 참가자가 모여 진행하는 마피아 게임의 사회자 전용 기록·진행 도구</p>
+      <p class="muted">실제 오프라인 마피아 게임 · 마피아 공동 지목 / 전원 어깨 터치 / 2회 확인</p>
     </div>
     <div class="top-actions">
       <span class="badge" id="authBadge">인증 확인 중</span>
@@ -34,7 +34,7 @@
       <p class="error" role="alert" id="authError"></p>
     </div>
     <div id="demoForm" hidden>
-      <p class="warning">지금은 <b>로그인 없는 로컬 테스트 모드</b>입니다. 실제 로그인 기능을 켜려면 README의 Supabase 설정을 완료하세요. 테스트 모드는 누구든 열 수 있으므로 공개 배포 때는 인증을 설정해야 합니다.</p>
+      <p class="warning">지금은 <b>로그인 없는 로컬 테스트 모드</b>입니다. 실제 로그인 기능을 켜려면 README의 Supabase 설정을 완료하세요. 테스트 모드는 로컬 파일 또는 localhost에서만 사용할 수 있으며, 공개 배포에서는 실제 로그인을 설정해야 합니다.</p>
       <button class="btn" id="demoBtn">로컬 테스트 모드 시작</button>
     </div>
   </section>
@@ -61,7 +61,7 @@
       <section class="card">
         <div class="bar"><h2>02 · 현재 진행</h2><span id="phaseBadge" class="badge bright"></span></div>
         <p class="lead" id="statusText"></p>
-        <div class="bar"><span id="aliveSummary" class="muted"></span><div class="actions compact"><button class="btn outline" id="undoBtn">↶ 진행 취소</button><button class="btn danger" id="resetBtn">새 게임</button></div></div>
+        <div class="bar"><span id="aliveSummary" class="muted"></span><div class="actions compact"><button class="btn outline" id="screenCoverBtn">👁 화면 가리기</button><button class="btn outline" id="undoBtn">↶ 진행 취소</button><button class="btn danger" id="resetBtn">새 게임</button></div></div>
         <p id="undoHint" class="muted"></p>
       </section>
       <div class="layout">
@@ -69,26 +69,28 @@
           <section class="card">
             <div class="bar"><h2>03 · 참가자 상태</h2><button class="btn outline small" id="toggleRoles">직업 가리기</button></div>
             <div class="table-wrap"><table><thead><tr><th>참가자</th><th>직업</th><th>상태 / 능력</th></tr></thead><tbody id="playerRows"></tbody></table></div>
-            <p class="muted micro">마피아팀/간호사 접선은 사회자에게만 보입니다. 화면 공유에 주의하세요.</p>
+            <p class="muted micro">모든 역할·접선·결과는 사회자 전용 정보입니다. 화면 공유에 주의하세요.</p>
           </section>
-          <section class="card">
-            <h2>04 · 사회자 진행 대본 <span class="muted micro">한국어 · 일본어 + 요미가나</span></h2>
-            <p id="scriptPrivacyHint" class="warning"><b>중요:</b> 모든 밤에 모든 직업을 정해진 순서 그대로 읽으세요. 해당 직업이 처음부터 없었거나, 죽었거나, 1회 능력을 사용했더라도 생략하면 안 됩니다. 대기 시간도 가능한 한 비슷하게 유지하세요.</p>
-            <div class="script-nav bar"><strong id="scriptProgress">첫 단계</strong><div class="actions compact"><button class="btn outline small" id="scriptPrev">← 이전</button><button class="btn outline small" id="scriptNext">다음 →</button></div></div>
+          <section class="card"><h2>06 · 사회자 비공개 기록</h2><div id="logEntries" class="log-entries"></div></section>
+        </div>
+        <div>
+          <section class="card" id="scriptSection">
+            <h2>04 · 현재 진행 대본 <span class="muted micro">한국어 · 일본어(요미가나)</span></h2>
+            <p id="scriptPrivacyHint" class="warning"><b>밤 진행 주의:</b> 직업 이름을 소리 내어 부르지 않습니다. 마피아만 먼저 동시에 깨워 공동 공격을 정하고, 살아 있는 전원을 <b>자리 순서대로 두 번</b> 터치합니다. 모두 같은 시간 동안 확인하며 비공개 정보는 두 번째 차례에 전달합니다.</p>
+            <div class="script-nav bar"><strong id="scriptProgress">첫 단계</strong><div class="actions compact"><button class="btn outline small" id="scriptPrev">← 이전 차례</button><button class="btn small" id="scriptNext">확인 · 다음 →</button></div></div>
             <div class="script-list" id="scriptList"></div>
+          </section>
+          <section class="card" id="nightView">
+            <h2>🌙 <span id="nightStageTitle">① 행동 입력 차례</span></h2>
+            <p class="muted" id="nightStageSub">마피아 그룹 공동 선택 후 모든 생존자의 행동을 같은 자리 순서로 기록합니다.</p>
+            <p class="muted micro">이 카드의 직업·지목·비공개 결과는 사회자만 보세요. 밤 자체에는 타이머가 없습니다.</p>
+            <div class="fields" id="nightFields"></div>
+            <button class="btn primary block" id="nightResolveBtn" hidden disabled>모든 결과 전달 완료 · 밤 확정 → 아침 발표</button>
           </section>
           <section class="card">
             <h2>05 · 공개 발표문 <span class="muted micro">한국어 · 일본어(요미가나) 동시 출력</span></h2>
             <div class="announcement" id="announcements">현재 발표할 내용이 없습니다.</div>
             <div class="actions"><button class="btn outline small" id="copyAnnouncements">발표문 복사</button></div>
-          </section>
-        </div>
-        <div>
-          <section class="card" id="nightView">
-            <h2>🌙 밤 능력 입력</h2>
-            <p class="muted">실제 참가자에게 눈을 감고 순서대로 행동을 요청한 뒤 사회자가 선택합니다. <b>밤 자체에는 타이머가 없습니다.</b> 행동은 선택하지 않아도 됩니다.</p>
-            <div class="fields" id="nightFields"></div>
-            <button class="btn primary block" id="nightResolveBtn">밤 행동 확정 → 낮 발표</button>
           </section>
           <section class="card" id="dayView" hidden>
             <h2>☀️ 낮 토론 및 투표</h2>
@@ -109,12 +111,14 @@
           <section class="card" id="endView" hidden>
             <h2>🏆 게임 종료</h2><p class="winner" id="winnerText"></p><p class="muted">진행 기록을 확인하거나 새 게임을 시작하세요.</p>
           </section>
-          <section class="card"><h2>06 · 사회자 비공개 기록</h2><div id="logEntries" class="log-entries"></div></section>
         </div>
       </div>
     </div>
   </div>
-  <footer>v3.0 · 게임은 오프라인에서 진행되고 사회자 입력만 기록됩니다. 로그인 활성화에는 첫 인증 시 인터넷 연결이 필요합니다.</footer>
+  <div id="privacyCover" class="privacy-cover" hidden role="dialog" aria-modal="true" aria-label="화면 가리기">
+    <div><div class="cover-icon">🔒</div><h2>사회자 화면 가림</h2><p>직업과 지목 정보가 보이지 않습니다.</p><button class="btn" id="screenRevealBtn">화면 다시 보기</button></div>
+  </div>
+  <footer>v4.0 · 게임은 오프라인에서 진행되고 사회자 입력만 기록됩니다. 로그인 활성화에는 첫 인증 시 인터넷 연결이 필요합니다.</footer>
 </main>
 <script src="engine.js"></script>
 <script src="scripts.js"></script>

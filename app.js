@@ -1,4 +1,4 @@
-/* MAFIA HOST v3 — editable deployment configuration
+/* MAFIA HOST v4 — editable deployment configuration
    To enable REAL host login: fill in the Supabase Project URL and PUBLISHABLE / anon key.
    Never put a service_role / secret key in a public GitHub repository.
 */
@@ -12,55 +12,72 @@ const AUTH_CONFIG = {
   'use strict';
   const E = window.MafiaEngine;
   const $ = id => document.getElementById(id);
-  const KEY = 'mafia-host-v3-state';
+  const KEY = 'mafia-host-v4-state';
   let storageKey = KEY + '-demo'; // Authenticated accounts are stored separately on each device.
   const MAX_UNDO = 40;
   let client=null, loggedIn=false, demoMode=false, selectedCount=8;
   let game=null, history=[], previousGame=null, timer={duration:300,remaining:300,until:null};
-  let rolesVisible=true;
+  let rolesVisible=false;
   let scriptStep=0,scriptStepKey='';
+  let nightFlow=null; // v4: saved action draft, two full shoulder-tap passes, stage checklist
   const counts = {};
 
-  // Language text and the immutable night call sequence live in scripts.js.
+  // Language text and silent two-pass shoulder-tap sequence live in scripts.js.
   const S = window.MafiaScripts;
   if (!S) throw new Error('scripts.js를 먼저 불러와야 합니다.');
   function upgradeGame(g) {
-    if (!g || !Array.isArray(g.players) || ![2,3].includes(g.version)) return null;
+    if (!g || !Array.isArray(g.players) || ![2,3,4].includes(g.version)) return null;
     g.used ||= {};
     g.used.priest = !!g.used.priest;
     // When upgrading a game already in progress, preserve single-use reporter history.
     g.used.reporter = !!g.used.reporter || (g.logs||[]).some(l=>/기자 취재:/.test(l.private||''));
     g.used.medium = !!g.used.medium;
     g.announcementEvents ||= [];
-    g.version=3;
+    g.version=4;
     return g;
   }
 
   function readLocal() {
-    game=null;history=[];previousGame=null;rolesVisible=true;resetTimerTo(5);
+    game=null;history=[];previousGame=null;nightFlow=null;rolesVisible=false;resetTimerTo(5);
     try {
       let raw=localStorage.getItem(storageKey);
-      // One-time migration from v2, without discarding the undo stack.
-      if (!raw) raw=localStorage.getItem(storageKey.replace('mafia-host-v3-state','mafia-host-v2-state'));
+      if(!raw){
+        for(const oldKey of ['mafia-host-v3-state','mafia-host-v2-state']) {
+          raw=localStorage.getItem(storageKey.replace(KEY,oldKey));
+          if(raw)break;
+        }
+      }
       const data=JSON.parse(raw||'null');
       game=upgradeGame(data?.game);
-      if (Array.isArray(data?.history)) history=data.history.slice(-MAX_UNDO).map(item=>({ ...item,game:upgradeGame(item.game) })).filter(x=>x.game);
+      if(Array.isArray(data?.history))history=data.history.slice(-MAX_UNDO)
+        .map(item=>({...item,game:upgradeGame(item.game)})).filter(x=>x.game);
       previousGame=upgradeGame(data?.previousGame);
-      if (raw && !localStorage.getItem(storageKey)) localStorage.setItem(storageKey,JSON.stringify({game,history,previousGame,timer:data?.timer,rolesVisible:data?.rolesVisible}));
-      if (data?.timer) timer=data.timer;
-      if (typeof data?.rolesVisible==='boolean') rolesVisible=data.rolesVisible;
-    } catch(err) { console.error('저장된 게임을 읽지 못함',err); }
+      nightFlow=data?.nightFlow||null;
+      if(data?.timer)timer=data.timer;
+      if(typeof data?.rolesVisible==='boolean')rolesVisible=data.rolesVisible;
+      if(raw&&!localStorage.getItem(storageKey))saveLocal();
+    } catch(err){console.error('저장된 게임을 읽지 못함',err);}
   }
   function saveLocal() {
-    try {localStorage.setItem(storageKey,JSON.stringify({game,history,previousGame,timer,rolesVisible}));}
-    catch(err) {alert('브라우저 저장에 실패했습니다. 용량/시크릿 모드를 확인하세요.');}
+    try {localStorage.setItem(storageKey,JSON.stringify({game,history,previousGame,timer,rolesVisible,nightFlow}));}
+    catch(err){alert('브라우저 저장에 실패했습니다. 용량/시크릿 모드를 확인하세요.');}
+  }
+  function ensureNightFlow() {
+    if(!game||game.phase!=='night')return;
+    const signature=E.living(game).map(p=>p.id).join(',');
+    if(!nightFlow||nightFlow.round!==game.round||nightFlow.signature!==signature){
+      nightFlow={round:game.round,signature,pass:'choices',step:0,
+        actionCompleted:[],resultCompleted:[],draft:{}};
+    }
+    nightFlow.actionCompleted||=[];nightFlow.resultCompleted||=[];nightFlow.draft||={};
+    if(!['choices','feedback'].includes(nightFlow.pass))nightFlow.pass='choices';
   }
   function freshTimer() { return {duration:Number($('discussionMinutes')?.value||5)*60||300,remaining:Number($('discussionMinutes')?.value||5)*60||300,until:null}; }
   function resetTimerTo(minutes=5) {const seconds=Number(minutes)*60;timer={duration:seconds,remaining:seconds,until:null};}
   function commit(next) {
-    history.push({game:E.deepCopy(game),timer:E.deepCopy(timer)});
+    history.push({game:E.deepCopy(game),timer:E.deepCopy(timer),nightFlow:E.deepCopy(nightFlow)});
     if(history.length>MAX_UNDO) history.shift();
-    game=next;
+    game=next;nightFlow=null;
     resetTimerTo(5);
     saveLocal();render();
   }
@@ -111,7 +128,7 @@ const AUTH_CONFIG = {
       };
       const newGame=E.createGame(names,counts,rand);
       if(!confirm(`${names.length}명의 직업을 무작위로 배정하고 시작할까요?\n게임 도중 인원 변경은 지원하지 않습니다.`))return;
-      game=newGame;history=[];previousGame=null;resetTimerTo(5);saveLocal();render();
+      game=newGame;history=[];previousGame=null;nightFlow=null;resetTimerTo(5);saveLocal();render();
     }catch(err){$('setupError').hidden=false;$('setupError').textContent=err.message;}
   }
   function selectField(id,label,items,note,includeNone=true){
@@ -119,67 +136,118 @@ const AUTH_CONFIG = {
     const lab=document.createElement('label');lab.htmlFor=id;lab.textContent=label;wrap.append(lab);
     const sel=document.createElement('select');sel.id=id;
     if(includeNone)sel.add(new Option('선택 안 함',''));
-    for(const p of items)sel.add(new Option(p.name,String(p.id)));
+    for(const item of items)sel.add(new Option(item.name,String(item.id)));
     wrap.append(sel);
     if(note){const hint=document.createElement('div');hint.className='field-note';hint.textContent=note;wrap.append(hint);}
     return wrap;
   }
-  function makeSelect(id,label,list,note='',includeNone=true,container=$('nightFields')) {
-    const field=selectField(id,label,list,note,includeNone);container.append(field);return $(id);
+  function renderChoice(id,label,items,note='',includeNone=true){
+    const dest=$('nightFields'),wrap=selectField(id,label,items,note,includeNone);
+    dest.append(wrap);
+    const sel=wrap.querySelector('select');
+    const saved=nightFlow.draft[id];
+    if(saved!==undefined&&[...sel.options].some(x=>x.value===String(saved)))sel.value=String(saved);
+    else {sel.value=sel.options[0]?.value||'';nightFlow.draft[id]=sel.value;}
+    sel.addEventListener('change',()=>{
+      nightFlow.draft[id]=sel.value;
+      nightFlow.actionCompleted=nightFlow.actionCompleted.filter(x=>x!==currentNightStep().id);
+      nightFlow.resultCompleted=[];
+      saveLocal();renderScript();showNight();
+    });
+    return sel;
   }
+  function addNote(text,cls='muted'){
+    const p=document.createElement('p');p.className=cls;p.textContent=text;$('nightFields').append(p);
+  }
+  function currentNightStep(){return S.nightSteps(game,nightFlow.pass)[nightFlow.step];}
   function showNight(){
-    const dest=$('nightFields');dest.replaceChildren();const alive=E.living(game),roles=r=>E.active(game,r);
-    const shooters=alive.filter(p=>p.role==='mafia');
-    if(shooters.length){
-      makeSelect('mafiaShooter','공격을 실행하는 마피아',shooters,'테러리스트 자폭 판정에서 공격자 판단에 사용',false);
-      makeSelect('mafiaTarget','마피아의 공격 대상',alive,'마담/청부업자를 지목하면 공격하지 않고 접선. 마피아 팀 내 공격은 무효');
+    ensureNightFlow();
+    const step=currentNightStep(),dest=$('nightFields');dest.replaceChildren();
+    $('nightStageTitle').textContent=nightFlow.pass==='choices'?'① 행동 입력 차례':'② 비공개 결과 전달 차례';
+    $('nightStageSub').textContent=nightFlow.pass==='choices'
+      ? '전체 생존자를 자리 순서대로 한 번씩 깨웁니다. 모든 사람에게 비슷한 시간을 사용하세요.'
+      : '같은 사람들을 같은 순서로 다시 확인합니다. 조사 결과가 없는 사람도 건너뛰지 마세요.';
+    if(step.kind==='group'){
+      const shooters=E.living(game).filter(p=>p.role==='mafia');
+      const title=document.createElement('h3');title.textContent='일반 마피아 전원이 동시에 눈을 뜹니다 (사회자 전용)';dest.append(title);
+      addNote('접선 전후와 관계없이 마담·청부업자는 이 그룹 차례에 참여하지 않습니다. 총을 쏘는 일반 마피아만 공동으로 공격을 결정합니다.');
+      if(shooters.length){
+        renderChoice('mafiaShooter','총격을 실행하는 마피아 (자폭 판정용)',shooters,'마피아끼리 조용히 합의해 한 명을 선택합니다.',false);
+        renderChoice('mafiaTarget','공동 공격 대상',E.living(game),'마담/청부업자를 지목하면 접선. 선택 안 하면 공격하지 않습니다.');
+      } else addNote('생존 일반 마피아가 없습니다. 이 단계에서도 전체 순서는 유지합니다.');
+    } else if(step.kind==='person'){
+      const actor=E.byId(game,step.playerId);
+      const h=document.createElement('h3');h.textContent=`${actor.name} · ${E.ROLES[actor.role].label} (사회자만 확인)`;dest.append(h);
+      if(nightFlow.pass==='feedback'){
+        const preview=E.resolveNight(game,nightFlow.draft);
+        const info=document.createElement('div');info.className='private-result';
+        const head=document.createElement('b');head.textContent='본인에게만 조용히 알려줄 결과';
+        const msg=document.createElement('p');msg.textContent=E.feedbackFor(game,nightFlow.draft,preview,actor.id);
+        info.append(head,msg);dest.append(info);
+        addNote('다른 참가자가 화면을 볼 수 없도록 주의하세요. 다른 사람의 결과도 유출하면 안 됩니다. 결과가 없는 사람도 같은 시간 동안 눈을 뜨게 하세요.');
+      } else {
+        const alive=E.living(game),dead=game.players.filter(p=>!p.alive);
+        switch(actor.role){
+          case 'mafia':addNote('공동 공격은 앞의 그룹 단계에서 이미 입력했습니다. 개별 차례도 생략하지 않습니다.');break;
+          case 'madam':renderChoice('madamTarget','봉인 또는 접선할 사람',alive.filter(p=>p.id!==actor.id),'자신 선택 불가 · 일반 마피아를 지목하면 접선 (매일 밤).');break;
+          case 'hitman':
+            if(game.contact.hitman){
+              renderChoice('hitmanTarget','직업을 추측할 대상',alive,'접선한 다음 밤부터 매일 사용 가능');
+              const roles=Object.entries(E.ROLES).map(([id,role])=>({id,name:role.label}));
+              renderChoice('hitmanGuess','추측한 직업',roles,'맞히면 즉시 처형 (치료·방탄 무시)');
+            }else addNote('아직 마피아와 접선하지 않았으므로 추측할 수 없습니다. 오늘 접선하더라도 다음 밤부터 가능.');
+            break;
+          case 'doctor':renderChoice('doctorTarget','치료할 대상',alive,'간호사를 치료 대상으로 지목하면 상호 접선');break;
+          case 'nurse':
+            if(E.canNurseHeal(game))renderChoice('nurseHeal','계승 치료할 대상',alive,'접선 후 의사 사망 시 다음 밤부터 치료 계승');
+            else if(E.active(game,'doctor'))renderChoice('nurseProbe','의사 탐색 대상',alive,'의사를 직접 지목하거나 의사가 간호사를 치료 대상으로 고르면 접선');
+            else addNote('의사가 없고 접선 후 치료를 계승한 상태도 아닙니다. 행동 없음.');
+            break;
+          case 'detective':renderChoice('detectiveTarget','경찰 조사 대상',alive,'마피아 팀 여부 · 결과는 2차 전달 차례에서 알려줍니다.');break;
+          case 'officer':renderChoice('officerTarget','공무원 직업 조사 대상',alive,'마피아 팀이면 정보 없음 · 결과는 2차 전달 차례에서 알려줍니다.');break;
+          case 'reporter':
+            if(game.round>=2&&!game.used.reporter)renderChoice('reporterTarget','익명 취재 대상 (1회)',alive,'둘째 밤부터 게임당 1회 · 아침 전체 공개');
+            else addNote(game.used.reporter?'기자는 이미 취재 능력을 사용했습니다. 행동 없음.':'기자는 첫째 밤에는 능력을 사용하지 못합니다.');
+            break;
+          case 'medium':
+            if(game.round>=2&&!game.used.medium)renderChoice('mediumTarget','직업을 확인할 기존 사망자 (1회)',dead,'둘째 밤부터 게임당 1회 · 결과는 2차 전달 차례에 비공개 확인');
+            else addNote(game.used.medium?'영매 능력은 이미 사용했습니다.':'영매는 둘째 밤부터 능력을 사용할 수 있습니다.');
+            break;
+          case 'priest':
+            if(!game.used.priest)renderChoice('priestTarget','부활시킬 기존 사망자 (1회)',dead,'게임당 1회 · 오늘 밤 처음 사망한 사람은 선택 불가');
+            else addNote('부활 능력을 이미 사용했습니다. 행동 없음.');
+            break;
+          case 'thug':renderChoice('thugTarget','건달 협박 대상',alive,'다음 낮 투표권 상실');break;
+          case 'terrorist':renderChoice('terroristTarget','밤 자폭 대상',alive,'자신을 공격하는 일반 마피아가 이 사람일 때 동반 사망');break;
+          case 'soldier':addNote('군인의 방탄은 자동 적용됩니다. 매일 같은 순서로 확인하세요.');break;
+          case 'politician':addNote('정치인의 2표·처형 면역은 낮에 적용됩니다. 밤에는 행동 없음.');break;
+          case 'lover':addNote('연인의 대리 희생은 자동 적용됩니다. 밤에는 행동 없음.');break;
+          default:addNote('이번 밤에 따로 입력할 고유 능력은 없습니다. 다른 참가자와 동일한 시간 동안 차례를 진행하세요.');
+        }
+      }
+    } else if(step.kind==='intro')addNote(step.privateNote);
+    else if(step.kind==='end'){
+      addNote(step.privateNote);
+      if(nightFlow.pass==='choices'){
+        const picked=Object.entries(nightFlow.draft).filter(([k,v])=>v!=='' && k!=='mafiaShooter');
+        const summary=document.createElement('p');summary.textContent=`현재 입력된 선택 ${picked.length}개 · 다음 버튼을 누르면 결과 전달 단계로 넘어갑니다.`;dest.append(summary);
+      }
     }
-    if(roles('madam'))makeSelect('madamTarget','마담: 봉인 또는 마피아 접선 대상',alive.filter(p=>p.id!==roles('madam').id),'마담 자신은 지목 불가. 일반 마피아를 지목하면 접선; 그 외 직업의 밤 능력 봉인');
-    if(roles('hitman')){
-      if(game.contact.hitman){
-        makeSelect('hitmanTarget','청부업자: 처형할 대상',alive,'직업을 정확히 맞히면 즉시 사망 (치료 무시)');
-        const box=document.createElement('div');box.className='field';
-        const lbl=document.createElement('label');lbl.htmlFor='hitmanGuess';lbl.textContent='청부업자가 추측한 정확한 직업';
-        const sel=document.createElement('select');sel.id='hitmanGuess';sel.add(new Option('추측 안 함',''));
-        for(const [id,r] of Object.entries(E.ROLES))sel.add(new Option(r.label,id));
-        box.append(lbl,sel);dest.append(box);
-      } else { const p=document.createElement('p');p.className='muted';p.textContent='청부업자: 아직 마피아에게 총을 맞아 접선하지 않았으므로 직업 추측 불가';dest.append(p); }
-    }
-    if(roles('doctor'))makeSelect('doctorTarget','의사: 치료할 대상',alive,'의사가 간호사를 치료 대상으로 지목하면 상호 접선');
-    if(roles('nurse')){
-      if(E.canNurseHeal(game))makeSelect('nurseHeal','간호사: 의사 사망 후 계승 치료 대상',alive,'의사가 사망한 다음 밤부터 사용 가능');
-      else if(roles('doctor'))makeSelect('nurseProbe','간호사: 의사 탐색 대상',alive,'직접 의사를 선택하거나 의사가 간호사를 치료하면 접선');
-      else {const p=document.createElement('p');p.className='muted';p.textContent='간호사: 의사와 접선하지 않은 채 의사가 사망해 치료 계승 불가';dest.append(p);}
-    }
-    if(roles('detective'))makeSelect('detectiveTarget','경찰: 조사 대상',alive,'마피아 팀인지 여부만 확인');
-    if(roles('officer'))makeSelect('officerTarget','공무원: 직업 조사 대상',alive,'마피아 팀원은 정보 없음, 시민 팀은 정확한 직업 표시');
-    if(roles('reporter')){
-      if(game.round>=2 && !game.used?.reporter) makeSelect('reporterTarget','기자: 공개 취재 대상 (게임당 1회)',alive,'익명 공개 · 둘째 밤부터 딱 한 번. 사용 후 입력칸만 사라지며 진행 대본은 계속 낭독');
-      else {const p=document.createElement('p');p.className='muted';p.textContent=game.used?.reporter?'기자: 1회 사용 완료 (진행 대본은 계속 부르세요)':'기자: 첫째 밤에는 능력 사용 불가 (진행 대본은 동일)';dest.append(p);}
-    }
-    if(roles('terrorist'))makeSelect('terroristTarget','테러리스트: 밤 자폭 대상',alive,'이 대상인 마피아가 테러리스트를 공격해서 처형하면 함께 사망');
-    if(roles('thug'))makeSelect('thugTarget','건달: 다음 낮 투표권을 없앨 사람',alive,'투표 못 함 효과는 다음 낮 한 번만 적용');
-    if(roles('priest')&&!game.used?.priest){
-      const dead=game.players.filter(p=>!p.alive);
-      makeSelect('priestTarget','성직자: 부활시킬 사망자',dead,'이전에 죽은 참가자만 선택 가능 · 게임당 1회');
-    }
-    if(roles('medium')){
-      if(game.round >= 2 && !game.used?.medium){
-        const dead=game.players.filter(p=>!p.alive);
-        makeSelect('mediumTarget','영매: 직업을 확인할 사망자 (게임당 1회)',dead,'둘째 밤부터 1회 · 조사 내용은 사회자 비공개 기록에만 표시');
-      } else {const p=document.createElement('p');p.className='muted';p.textContent=game.used?.medium?'영매: 1회 사용 완료 (진행 대본은 계속 부르세요)':'영매: 첫째 밤에는 능력 사용 불가 (진행 대본은 동일)';dest.append(p);}
-    }
-  }
-  function readNight(){
-    const choices={};
-    for(const id of ['mafiaShooter','mafiaTarget','madamTarget','hitmanTarget','hitmanGuess','doctorTarget','nurseProbe','nurseHeal','detectiveTarget','officerTarget','reporterTarget','terroristTarget','thugTarget','priestTarget','mediumTarget']){
-      if($(id))choices[id]=$(id).value;
-    }
-    return choices;
+    const stages=S.nightSteps(game,nightFlow.pass);
+    const completed=nightFlow.pass==='choices'?nightFlow.actionCompleted:nightFlow.resultCompleted;
+    const final=step.kind==='end'&&nightFlow.pass==='feedback';
+    $('nightResolveBtn').disabled=!final||!stages.slice(0,-1).every(s=>completed.includes(s.id));
+    $('nightResolveBtn').hidden=nightFlow.pass!=='feedback';
   }
   function resolveNight(){
-    if(!confirm('밤 행동을 확정하고 낮으로 넘어갈까요? 잘못 입력했다면 진행 취소가 가능합니다.'))return;
-    try {commit(E.resolveNight(game,readNight()));}
+    ensureNightFlow();
+    const steps=S.nightSteps(game,'feedback');
+    if(nightFlow.pass!=='feedback'||nightFlow.step!==steps.length-1||
+        !steps.slice(0,-1).every(s=>nightFlow.resultCompleted.includes(s.id))){
+      alert('행동 입력과 비공개 결과 전달의 모든 참가자 차례를 마쳐주세요.');return;
+    }
+    if(!confirm('밤 행동을 확정하고 공개 발표문으로 넘어갈까요? 밤 확정은 진행 취소로 복구할 수 있습니다.'))return;
+    try{commit(E.resolveNight(game,nightFlow.draft));}
     catch(err){alert(err.message);}
   }
   function drawDay(){
@@ -230,11 +298,11 @@ const AUTH_CONFIG = {
   function undo(){
     if(!history.length)return;
     if(!confirm('직전 밤/낮 확정을 취소하고 그 이전 상태로 돌아갈까요?'))return;
-    const last=history.pop();game=last.game;timer=last.timer;saveLocal();render();
+    const last=history.pop();game=last.game;timer=last.timer;nightFlow=last.nightFlow||null;saveLocal();render();
   }
   function resetGame(){
     if(!confirm('현재 게임을 종료하고 새 게임 설정 화면으로 돌아갈까요?\n설정 화면의 “이전 게임 복원”으로 한 번 복구할 수 있습니다.'))return;
-    previousGame=E.deepCopy(game);game=null;history=[];resetTimerTo(5);saveLocal();render();
+    previousGame=E.deepCopy(game);game=null;history=[];nightFlow=null;resetTimerTo(5);saveLocal();render();
   }
   function phaseName(p){return p==='night'?'밤':p==='day'?'낮':'종료';}
   function makeLogs(){
@@ -269,31 +337,68 @@ const AUTH_CONFIG = {
   }
   function renderScript(){
     const field=$('scriptList');field.replaceChildren();
-    // NEVER branch on role membership, death, round, contact or used skills.
-    const items = game.phase==='night'?S.NIGHT:game.phase==='day'?S.DAY:S.ENDED;
-    const stepKey=`${game.phase}:${game.round}`;
-    if (stepKey!==scriptStepKey) {scriptStep=0;scriptStepKey=stepKey;}
-    scriptStep=Math.max(0,Math.min(scriptStep,items.length-1));
-    $('scriptProgress').textContent=`${scriptStep+1} / ${items.length} · ${items[scriptStep].label}`;
-    $('scriptPrev').disabled=scriptStep===0;
-    $('scriptNext').disabled=scriptStep===items.length-1;
-    for (const [i, item] of items.entries()) {
-      const wrap=document.createElement('div');wrap.className=i===scriptStep?'script-item script-active':'script-item';
-      const head=document.createElement('div');head.className='script-head';
-      head.textContent=`${i+1}/${items.length} · ${item.label}`;
-      const kr=document.createElement('div');kr.className='script-ko';kr.textContent=item.ko;
-      const jp=document.createElement('div');jp.className='script-ja';jp.lang='ja';jp.innerHTML=item.ja; // trusted static script
-      wrap.append(head,kr,jp);field.append(wrap);
+    const isNight=game.phase==='night';
+    if(isNight)ensureNightFlow();
+    const items=isNight?S.nightSteps(game,nightFlow.pass):game.phase==='day'?S.DAY:S.ENDED;
+    if(!isNight){
+      const stepKey=`${game.phase}:${game.round}`;
+      if(stepKey!==scriptStepKey){scriptStep=0;scriptStepKey=stepKey;}
+      scriptStep=Math.max(0,Math.min(scriptStep,items.length-1));
     }
-    $('scriptPrivacyHint').hidden=game.phase!=='night';
+    const idx=isNight?nightFlow.step:scriptStep;
+    const step=items[idx];
+    const prefix=isNight?(nightFlow.pass==='choices'?'1차 선택':'2차 결과'):'진행 대본';
+    $('scriptProgress').textContent=`${prefix} · ${idx+1}/${items.length}`;
+    $('scriptPrev').disabled=(!isNight&&idx===0)||(isNight&&idx===0&&nightFlow.pass==='choices');
+    $('scriptNext').disabled=idx===items.length-1&&(!isNight||nightFlow.pass==='feedback');
+    $('scriptNext').textContent=isNight&&idx===items.length-1&&nightFlow.pass==='choices'?'결과 전달 시작 →':isNight?'이 차례 완료 · 다음 →':'다음 →';
+    $('scriptPrivacyHint').hidden=!isNight;
+    const wrap=document.createElement('div');wrap.className='script-item script-active';
+    const head=document.createElement('div');head.className='script-head';
+    head.textContent=`${idx+1}/${items.length} · ${step.label}`;
+    const tip=document.createElement('p');tip.className='hint-tip';tip.textContent=step.privateNote||'아래 문구를 필요에 따라 읽으세요.';
+    const cap=document.createElement('div');cap.className='muted micro';cap.textContent='사회자 대본 · 한국어 / 日本語 (ふりがな)';
+    const ko=document.createElement('div');ko.className='script-ko';ko.textContent=step.ko;
+    const ja=document.createElement('div');ja.className='script-ja';ja.lang='ja';ja.innerHTML=step.ja;
+    wrap.append(head,tip,cap,ko,ja);field.append(wrap);
+    if(isNight){
+      const tally=document.createElement('div');tally.className='flow-count';
+      const completed=nightFlow.pass==='choices'?nightFlow.actionCompleted:nightFlow.resultCompleted;
+      tally.textContent=`완료 ${completed.length}/${items.length-1}단계 · 진행 중 ${step.label}`;
+      field.append(tally);
+      const note=document.createElement('p');note.className='muted micro';
+      note.textContent='※ 위 단계 이름과 직업은 사회자만 확인합니다. 참가자에게는 직업·이름·번호를 큰 소리로 부르지 마세요.';
+      field.append(note);
+    }
   }
-  function advanceScript(delta) {
-    if (!game) return;
-    const total=(game.phase==='night'?S.NIGHT:game.phase==='day'?S.DAY:S.ENDED).length;
-    scriptStep=Math.max(0,Math.min(total-1,scriptStep+delta));
-    renderScript();
-    const current=$('scriptList').children[scriptStep];
-    current?.scrollIntoView?.({behavior:'smooth',block:'nearest'});
+  function advanceScript(delta){
+    if(!game)return;
+    if(game.phase!=='night'){
+      const total=(game.phase==='day'?S.DAY:S.ENDED).length;
+      scriptStep=Math.max(0,Math.min(total-1,scriptStep+delta));
+      renderScript();return;
+    }
+    ensureNightFlow();
+    const steps=S.nightSteps(game,nightFlow.pass);
+    if(delta<0){
+      if(nightFlow.step>0)nightFlow.step-=1;
+      else if(nightFlow.pass==='feedback'){
+        nightFlow.pass='choices';nightFlow.step=S.nightSteps(game,'choices').length-1;
+        nightFlow.resultCompleted=[];
+      }
+    }else if(delta>0){
+      if(nightFlow.step<steps.length-1){
+        const key=steps[nightFlow.step].id;
+        const arr=nightFlow.pass==='choices'?nightFlow.actionCompleted:nightFlow.resultCompleted;
+        if(!arr.includes(key))arr.push(key);
+        nightFlow.step+=1;
+      }else if(nightFlow.pass==='choices'){
+        const missing=steps.slice(0,-1).filter(s=>!nightFlow.actionCompleted.includes(s.id));
+        if(missing.length)return alert('아직 확인하지 않은 차례가 있습니다. 이전 버튼으로 돌아가 확인해 주세요.');
+        nightFlow.pass='feedback';nightFlow.step=0;nightFlow.resultCompleted=[];
+      }
+    }
+    saveLocal();renderScript();showNight();
   }
   function renderAnnouncements() {
     const field=$('announcements');field.replaceChildren();
@@ -333,6 +438,7 @@ const AUTH_CONFIG = {
     if(!game){$('restoreBtn').hidden=!previousGame;return;}
     $('phaseBadge').textContent=game.phase==='ended'? '게임 종료' : `${game.round}일 차 · ${phaseName(game.phase)} ${game.phase==='night'?'🌙':'☀️'}`;
     $('statusText').textContent=game.phase==='night'?'밤의 각 직업 행동을 확인해 입력하세요.':'낮에 토론과 투표를 진행하세요.';
+    if(game.phase==='night')$('statusText').textContent='마피아 공동 지목 → 생존자 전원 선택 → 생존자 전원 비공개 결과 전달 → 아침 발표';
     if(game.phase==='ended')$('statusText').textContent='승리 조건이 충족되어 게임이 종료되었습니다.';
     const living=E.living(game),mafia=living.filter(p=>E.team(p.role)==='mafia').length;
     $('aliveSummary').textContent=`생존 ${living.length}/${game.players.length}명 · 마피아 팀 ${mafia}명 · 시민 팀 ${living.length-mafia}명`;
@@ -375,8 +481,10 @@ const AUTH_CONFIG = {
     $('nightResolveBtn').onclick=resolveNight;
     $('dayResolveBtn').onclick=resolveDay;
     $('undoBtn').onclick=undo;
+    $('screenCoverBtn').onclick=()=>{$('privacyCover').hidden=false;};
+    $('screenRevealBtn').onclick=()=>{$('privacyCover').hidden=true;};
     $('resetBtn').onclick=resetGame;
-    $('restoreBtn').onclick=()=>{if(previousGame){game=previousGame;previousGame=null;history=[];saveLocal();render();}};
+    $('restoreBtn').onclick=()=>{if(previousGame){game=previousGame;previousGame=null;history=[];nightFlow=null;saveLocal();render();}};
     $('toggleRoles').onclick=()=>{rolesVisible=!rolesVisible;saveLocal();renderPlayers();};
     $('copyAnnouncements').onclick=async()=>{
       const msg=announcementsToCopy();
@@ -387,7 +495,7 @@ const AUTH_CONFIG = {
     $('scriptNext').onclick=()=>advanceScript(1);
     $('timerToggle').onclick=toggleTimer;$('timerReset').onclick=resetDiscussion;
     $('discussionMinutes').onchange=()=>{if(!timer.until)resetDiscussion();};
-    $('demoBtn').onclick=()=>{demoMode=true;loggedIn=true;showAuthenticated('로컬 테스트 · 인증 없음');};
+    $('demoBtn').onclick=()=>{if(!isLocalDemoAllowed())return;demoMode=true;loggedIn=true;showAuthenticated('로컬 테스트 · 인증 없음');};
     $('loginBtn').onclick=()=>handleAuth(false);
     $('signupBtn').onclick=()=>handleAuth(true);
     $('signOutBtn').onclick=async()=>{
@@ -402,9 +510,10 @@ const AUTH_CONFIG = {
     $('authBadge').textContent=label;
     $('signOutBtn').hidden=false;render();
   }
+  function isLocalDemoAllowed(){return location.protocol==='file:'||['localhost','127.0.0.1','[::1]'].includes(location.hostname);}
   function showLoggedOut(msg='이메일과 비밀번호를 입력하세요.'){
     $('loginView').hidden=false;$('workspace').hidden=true;
-    $('authForm').hidden=!client;$('demoForm').hidden=!!client;
+    $('authForm').hidden=!client;$('demoForm').hidden=!!client||!isLocalDemoAllowed();
     $('signupBtn').hidden=!AUTH_CONFIG.allowSignup;
     $('authInfo').textContent=msg;
     $('signOutBtn').hidden=true;$('authBadge').textContent=client?'로그인 필요':'로컬 테스트';
@@ -434,7 +543,9 @@ const AUTH_CONFIG = {
     const partiallyConfigured=!!AUTH_CONFIG.url !== !!AUTH_CONFIG.publishableKey;
     if(partiallyConfigured){ $('authBadge').textContent='인증 설정 오류'; $('authInfo').textContent='Supabase URL과 publishableKey를 둘 다 입력해 주세요.'; return; }
     const configured=AUTH_CONFIG.url && AUTH_CONFIG.publishableKey;
-    if(!configured){showLoggedOut('Supabase를 연결하지 않아 로그인 없이 시험할 수 있습니다. 공개 배포 전에는 인증 설정을 권장합니다.');return;}
+    if(!configured){
+      showLoggedOut(isLocalDemoAllowed()?'로컬 개발 중에는 테스트 모드를 사용할 수 있습니다.':'배포 환경에서 사회자 로그인을 사용하려면 Supabase URL과 공개 키를 설정해야 합니다. 설정 전에는 앱에 입장할 수 없습니다.');return;
+    }
     try{
       await loadSupabase();
       client=window.supabase.createClient(AUTH_CONFIG.url,AUTH_CONFIG.publishableKey);

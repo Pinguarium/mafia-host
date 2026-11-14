@@ -1,4 +1,4 @@
-/* Mafia Host v3: platform-independent game rules. Offline, zero dependencies. */
+/* Mafia Host v4: platform-independent game rules. Offline, zero dependencies. */
 (function (root, factory) {
   const engine = factory();
   if (typeof module === 'object' && module.exports) module.exports = engine;
@@ -82,7 +82,7 @@
       const j = Math.floor(random() * (i+1));
       [roles[i],roles[j]] = [roles[j],roles[i]];
     }
-    return { version:3, round:1, phase:'night', winner:null,
+    return { version:4, round:1, phase:'night', winner:null,
       players:clean.map((name,id)=>({ id, name, role:roles[id], alive:true, soldierShieldUsed:false })),
       contact:{madam:false, hitman:false, nurse:false}, used:{priest:false,reporter:false,medium:false},
       blockedVoter:null, logs:[{round:0,phase:'setup',private:`참가자 ${clean.length}명 / 마피아 팀 ${clean.filter((_,i)=>team(roles[i])==='mafia').length}명으로 시작`,public:[]}],
@@ -125,7 +125,9 @@
     if (input.phase !== 'night') throw new Error('현재 밤 단계가 아닙니다.');
     const g=deepCopy(input), priv=[],pub=[], events=[], dead=[];
     const isOn = (r)=>active(g,r);
-    const pick=(key)=>isAliveTarget(g,choices[key]);
+    // Use night-start survivor state for simultaneous actions, even if a target
+    // dies later in this same night's resolution.
+    const pick=(key)=>{const original=isAliveTarget(input,choices[key]);return original ? byId(g,original.id) : null;};
     const targetedByMadam=pick('madamTarget');
     let sealedId=null;
     if (isOn('madam') && targetedByMadam && targetedByMadam.id!==isOn('madam').id) {
@@ -316,5 +318,84 @@
     if (next.phase!=='ended') next.round += 1;
     return next;
   }
-  return {ROLES,CONFIG_ROLES,preset,validateConfig,createGame,byId,living,active,team,checkWin,canNurseHeal,resolveNight,voteSummary,resolveDay,deepCopy};
+  // Night actions are simultaneous. Private feedback is calculated from the
+  // resolved preview, not guessed during a participant's first turn.
+  function feedbackFor(input, choices, resolved, playerId) {
+    const actor=byId(input,playerId);
+    if(!actor?.alive) return '이번 차례에는 전달할 결과가 없습니다.';
+    const targetOf = key => isAliveTarget(input,choices[key]);
+    const madam=active(input,'madam');
+    const blocked=madam && targetOf('madamTarget') && targetOf('madamTarget').id!==madam.id
+      && targetOf('madamTarget').role!=='mafia' ? targetOf('madamTarget').id : null;
+    if(actor.id===blocked) {
+      const joined=[];
+      if(actor.role==='hitman'&&resolved.contact.hitman&&!input.contact.hitman)
+        joined.push('일반 마피아와 접선에 성공했습니다.');
+      if(['doctor','nurse'].includes(actor.role)&&resolved.contact.nurse&&!input.contact.nurse)
+        joined.push('의사와 간호사가 접선에 성공했습니다.');
+      return joined.join(' ')+' 이번 밤 고유 능력이 봉인되어 조사·행동 결과가 없습니다.';
+    }
+    const targetName=(key)=>targetOf(key)?.name||'미선택';
+    switch(actor.role) {
+      case 'mafia': {
+        const contactNames=[];
+        if(resolved.contact.madam&&!input.contact.madam)contactNames.push(`마담 ${active(input,'madam')?.name||''}`);
+        if(resolved.contact.hitman&&!input.contact.hitman)contactNames.push(`청부업자 ${active(input,'hitman')?.name||''}`);
+        return contactNames.length?`이번 밤 접선 확인: ${contactNames.join(', ')}. 공동 공격은 그룹 차례에 처리되었습니다.`
+          :'공동 공격 선택은 마피아 그룹 차례에 처리되었습니다.';
+      }
+      case 'madam': {
+        const t=targetOf('madamTarget');
+        if(resolved.contact.madam&&!input.contact.madam)
+          return `일반 마피아와 접선에 성공했습니다.${t&&t.role!=='mafia'?` ${t.name}님의 밤 고유 능력도 봉인했습니다.`:''}`;
+        if(!t||t.id===actor.id)return '이번 밤 봉인 대상을 지정하지 않았습니다.';
+        return t.role==='mafia'?'일반 마피아와 접선에 성공했습니다.':`${t.name}님의 이번 밤 고유 능력을 봉인했습니다.`;
+      }
+      case 'hitman': {
+        if(!input.contact.hitman) return resolved.contact.hitman
+          ? '일반 마피아와 접선에 성공했습니다. 직업 추측은 다음 밤부터 사용할 수 있습니다.'
+          : '아직 접선 전이므로 직업을 추측할 수 없습니다.';
+        const t=targetOf('hitmanTarget'),guess=choices.hitmanGuess;
+        if(!t||!ROLES[guess])return '오늘은 직업을 추측하지 않았습니다.';
+        return t.role===guess && team(t.role)!=='mafia'
+          ? `${t.name}님의 직업 추측 성공: ${ROLES[t.role].label}. 처형이 적용됩니다.`
+          : `${t.name}님의 직업 추측에 실패했습니다.`;
+      }
+      case 'doctor': return resolved.contact.nurse&&!input.contact.nurse
+        ? `간호사와 접선에 성공했습니다. 치료 대상: ${targetName('doctorTarget')}`
+        : `치료 대상: ${targetName('doctorTarget')} (공격이 있었는지는 별도로 알려주지 않습니다.)`;
+      case 'nurse': {
+        if(resolved.contact.nurse&&!input.contact.nurse) return '의사와 접선에 성공했습니다. 서로의 직업을 확인합니다.';
+        if(canNurseHeal(input))return `계승 치료 대상: ${targetName('nurseHeal')}`;
+        const t=targetOf('nurseProbe');
+        return t ? `${t.name}님은 ${t.role==='doctor'?'의사입니다. 접선 성공':'의사가 아닙니다.'}` : '이번 밤 처방 대상 없음';
+      }
+      case 'detective': {
+        const t=targetOf('detectiveTarget');
+        return t ? `${t.name}님은 ${team(t.role)==='mafia'?'마피아 팀입니다.':'마피아 팀이 아닙니다.'}`:'조사 대상 없음';
+      }
+      case 'officer': {
+        const t=targetOf('officerTarget');
+        return t ? `${t.name}님 조사 결과: ${team(t.role)==='mafia'?'정보 없음':ROLES[t.role].label}`:'조사 대상 없음';
+      }
+      case 'reporter': return input.round<2?'기자는 두 번째 밤부터 능력을 사용할 수 있습니다.'
+        : input.used.reporter?'이미 1회 사용한 능력입니다.'
+        : targetOf('reporterTarget')?`${targetName('reporterTarget')}님 취재 접수. 다음 아침 전체 공개되며 기자 신원은 비공개입니다.`:'이번 밤 취재 사용 안 함';
+      case 'medium': {
+        if(input.round<2)return '영매는 두 번째 밤부터 능력을 사용할 수 있습니다.';
+        if(input.used.medium)return '이미 1회 사용한 능력입니다.';
+        const t=byId(input,choices.mediumTarget);
+        return t&&!t.alive?`${t.name}님의 직업은 ${ROLES[t.role].label}입니다. (영매만 확인)`:'확인할 사망자 없음';
+      }
+      case 'priest': return input.used.priest?'이미 부활 능력을 사용했습니다.'
+        : resolved.used.priest?`${byId(input,choices.priestTarget)?.name||''}님 부활이 적용되었습니다.`:'이번 밤 부활 사용 안 함';
+      case 'thug': return `협박 대상: ${targetName('thugTarget')}`;
+      case 'terrorist': return `자폭 대상으로 지정한 사람: ${targetName('terroristTarget')}`;
+      case 'soldier': return '불굴은 자동 처리됩니다. 발동했다면 다음 아침 이름 없이 발표됩니다.';
+      case 'politician': return '정치인의 처세·2표 능력은 낮 투표에서 자동 적용됩니다.';
+      case 'lover': return '연인의 대리 희생 능력은 자동 처리됩니다.';
+      default: return '오늘 밤 전달할 비공개 조사 결과는 없습니다.';
+    }
+  }
+  return {ROLES,CONFIG_ROLES,preset,validateConfig,createGame,byId,living,active,team,checkWin,canNurseHeal,resolveNight,feedbackFor,voteSummary,resolveDay,deepCopy};
 });
